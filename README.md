@@ -49,4 +49,4 @@ app/src/main/kotlin/edge/roll/
 
 ## License
 
-Not yet chosen. A FOSS license must be added before an F-Droid submission.
+[GNU General Public License v3.0](LICENSE).
