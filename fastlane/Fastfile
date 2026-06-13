@@ -1,0 +1,18 @@
+# fastlane configuration — https://docs.fastlane.tools
+#
+# Release distribution is handled by GitHub Actions (see .github/workflows/build.yml)
+# and, eventually, F-Droid's own build server. These lanes are local conveniences.
+
+default_platform(:android)
+
+platform :android do
+  desc "Assemble a debug APK"
+  lane :debug do
+    gradle(task: "assembleDebug")
+  end
+
+  desc "Assemble a signed release APK (requires the signing env vars / keystore.properties)"
+  lane :release do
+    gradle(task: "clean assembleRelease")
+  end
+end

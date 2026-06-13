@@ -1,0 +1,2 @@
+json_key_file("") # Path to the Play Store service-account key (unused for F-Droid / GitHub releases)
+package_name("edge.roll")
