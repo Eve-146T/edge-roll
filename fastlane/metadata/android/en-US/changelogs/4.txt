@@ -1,0 +1,1 @@
+Packaging fixes for F-Droid reproducible builds.

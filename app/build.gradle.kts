@@ -27,8 +27,15 @@ android {
         applicationId = "edge.roll"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
+    }
+
+    // Keep release APKs free of Google's dependency-metadata signing block,
+    // which F-Droid rejects (and which breaks reproducible builds).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     signingConfigs {
