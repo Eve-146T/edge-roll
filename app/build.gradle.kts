@@ -68,6 +68,13 @@ android {
     }
 
     sourceSets["main"].jniLibs.srcDirs("libs")
+
+    lint {
+        // False positive: the adaptive launcher icon must stay in mipmap-anydpi-v26.
+        // Merging it into mipmap-anydpi (as ObsoleteSdkInt suggests) makes AAPT fail
+        // to find the resource, breaking the build.
+        disable += "ObsoleteSdkInt"
+    }
 }
 
 dependencies {

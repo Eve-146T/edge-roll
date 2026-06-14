@@ -1,6 +1,7 @@
 package edge.roll.core
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Color
 import android.graphics.Typeface
@@ -16,10 +17,15 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Shared HUD overlay used by every game (2D and 3D):
- * score + best at the top, animated center banners, and the game-over card.
- * Must only be touched from the UI thread (GameHostSession marshals for you).
+ * The game's HUD overlay: score + best at the top, animated center banners,
+ * and the game-over card. Must only be touched from the UI thread
+ * (GameHostSession marshals for you).
+ *
+ * Created programmatically (never inflated from XML) and shows dynamic,
+ * single-locale game text (scores, banners), so ViewConstructor / SetTextI18n
+ * are intentionally suppressed.
  */
+@SuppressLint("SetTextI18n", "ViewConstructor")
 class GameChromeView(private val activity: Activity, private val accent: Int) : FrameLayout(activity) {
 
     private val density = resources.displayMetrics.density
