@@ -5,10 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Edge Roll is a single-screen Android arcade game built with libGDX (3D, OpenGL ES).
-You swipe to tumble a cube along a floating bridge while a collapse front chases
-you from behind. It is a standalone app under package `edge.roll`, distributed
-via F-Droid and GitHub releases. No accounts, ads, tracking, or network access —
-the only permission is `VIBRATE`.
+You swipe to tumble a cube along a floating bridge while the tiles behind you
+crumble and drop into the abyss. It is a standalone app under package `edge.roll`,
+distributed via F-Droid and GitHub releases. No accounts, ads, tracking, or network
+access — the only permission is `VIBRATE`.
 
 ## Build & run
 
@@ -24,7 +24,8 @@ Requires JDK 17+ and the Android SDK (platform 35, build-tools 35.0.0). Set
 
 There are **no unit/instrumentation tests** and no `test`/`androidTest` source
 sets — the build check is "does it compile + lint clean". CI (`.github/workflows/build.yml`)
-runs `assembleDebug` on branches/PRs and `assembleRelease` + GitHub Release on `v*` tags.
+builds a debug APK on pushes to `main`, on pull requests, and on manual dispatch;
+it builds a signed `assembleRelease` and publishes a GitHub Release on `v*` tags.
 
 ### libGDX natives are not checked in
 
@@ -47,11 +48,10 @@ for each release.
 Three layers, smallest to largest:
 
 1. **Android host** (`edge.roll`): `App` (Application) initializes the three
-   global singletons. `MenuActivity` is the **launcher** — a plain Activity with
-   live difficulty sliders that persists a `BankConfig` to prefs, then starts
-   `GameActivity` (an `AndroidApplication`) which builds a `FrameLayout` stacking
-   the libGDX `GLSurfaceView` under a `GameChromeView` HUD and runs the game with
-   `BankConfig.load(this)`.
+   global singletons (`Scores`, `Haptics`, `SoundFx`). `GameActivity` is the
+   **launcher** (an `AndroidApplication`) — it builds a `FrameLayout` stacking the
+   libGDX `GLSurfaceView` (`initializeForView`) under a `GameChromeView` HUD and
+   runs `EdgeRoll`. `SCORE_ID`/`ACCENT` live in its companion.
 
 2. **Engine / shared core** (`edge.roll.core`): reusable, game-agnostic
    scaffolding. This is deliberately structured as a *mini game framework* even
@@ -70,10 +70,8 @@ only on the **UI thread**. `GameSession` is the bridge:
   `session.gameOver()` from the GL thread.
 - `GameHostSession` (the `GameSession` impl) holds score/over state in
   `Atomic*` and marshals every HUD update to the UI thread via
-  `activity.runOnUiThread` — the lone exception is `setBuffer()`, a ~60 Hz call
-  that writes a volatile field the meter polls itself. After `gameOver()` the GL
-  loop **keeps running** for the death animation — gameplay logic must guard on
-  `session.isOver`.
+  `activity.runOnUiThread`. After `gameOver()` the GL loop **keeps running** for
+  the death animation — gameplay logic must guard on `session.isOver`.
 
 When changing anything that crosses this boundary, keep the rule: game logic on
 GL thread reads/writes through `GameSession`; only `GameHostSession` and
@@ -87,38 +85,28 @@ GL thread reads/writes through `GameSession`; only `GameHostSession` and
   and "juice" (`shake`, `flash`, `burst3d` cube-shard explosions). Subclasses
   implement `init`/`tick`/`renderWorld`. Models created via the factories are
   tracked in `owned` and disposed for you.
-- `game/EdgeRoll.kt` — the whole game. The difficulty model is a **banking
-  chase**, not a per-tile timer:
-  - **The chase lives in `updateBank()`.** It drains the bank each frame, slides
-    `frontF` to match (`-cubeGz - fill*TRAIL`), pushes the meter, and dies when
-    the bank empties. A tile crumbles when `-gz <= frontF`.
-  - **Time bank, not a tile count.** `bank` (seconds) drains continuously at
-    `drainRate()` and is topped up — with diminishing returns — on reaching **any
-    fresh tile** (`Tile.visited`), so a forced sideways stretch is survivable but
-    oscillating on visited tiles isn't. `session.setBuffer(bank/bankMax)` drives
-    the HUD meter; `frontF` (the visible collapse line) is derived from the bank.
-  - **All banking numbers live in `BankConfig`** (`bankStart/Max`, `bankReward`,
-    `drainBase/Gain/Ramp`), tuned from the menu — *not* in `EdgeRoll`'s companion.
-  - **Score = forward distance** (`bestF` = furthest `-gz` reached) + gem bonuses;
-    sideways/back moves can't pad it (refilling the bank ≠ scoring).
-  - Camera (fixed follow `updateCam`), input (absolute 4-direction swipe/tap), and
-    the forward random-walk `generate()` are **unchanged from the original**. The
-    crumble/fall state machine (`ALIVE`→`CRUMBLE`→`FALLING`) and the quaternion
-    `orient` tumble are as before — only the *trigger* moved from per-tile timers
-    to the front.
-- `MenuActivity.kt` + `core/BankConfig.kt` — the launcher menu and the tunable
-  banking params it edits. `BankConfig.PARAMS` is a list of slider descriptors
-  (label/range/get/with lenses); the menu builds one `SeekBar` per entry
-  generically and `BankConfig.load/save` round-trips them through prefs. Add a
-  knob by adding one `Param` — the menu and persistence pick it up automatically.
+- `game/EdgeRoll.kt` — the whole game. The difficulty model is a **per-tile
+  crumble timer**:
+  - **Leaving a tile arms its crumble countdown.** `crumbleTime()` =
+    `max(0.42, 1.2 - score*0.01)` seconds — a tile drops ~1.2s after you roll off
+    it, faster as the score climbs. The per-tile state machine runs
+    `ALIVE`→`CRUMBLE`→`FALLING` (gravity + spin + fade), and rolling onto a missing
+    or already-falling tile topples the cube into the abyss.
+  - **Loitering kills you too.** Idling on the current tile past `dwellLimit()`
+    (= `crumbleTime() + 0.8`) makes the ground give way underfoot (`dwell`, with a
+    `tick` warning and a red pulse ~0.55s before it goes).
+  - **Score = new tiles traversed** (`Tile.visited`, +1 each) + gems (+3);
+    re-rolling onto an already-visited tile doesn't score. Reaching `nextMilestone`
+    fires a banner.
+  - Camera (fixed follow `updateCam`), input (absolute 4-direction swipe/tap with
+    its own buffered swipe detection for queued rolls), and the forward
+    random-walk `generate()` (lateral wiggle, holey side pads, gem spurs) drive
+    the run. The quaternion `orient` accumulates the 90° tumble.
 - `core/GameChromeView.kt` — the HUD `FrameLayout`, built **entirely in code**
-  (never XML): score/best, the `BankMeter` (a self-animating banking gauge down
-  the left edge), animated center banners, and the game-over card. The meter
-  reads a `@Volatile level` so the GL thread can push it lock-free via
-  `session.setBuffer()` (the one `GameSession` call that does *not* marshal to the
-  UI thread). RESTART **finishes + relaunches** the activity rather than
-  `recreate()`, because libGDX only disposes GL/native resources on a true
-  finish — `recreate()` would leak native meshes. Keep that pattern.
+  (never XML): score/best at the top, animated center banners, and the game-over
+  card. RESTART **finishes + relaunches** the activity rather than `recreate()`,
+  because libGDX only disposes GL/native resources on a true finish —
+  `recreate()` would leak native meshes. Keep that pattern.
 - `core/SoundFx.kt` — **all SFX are procedurally synthesized** at startup on a
   background thread (no audio assets shipped), written to WAV in cacheDir and
   loaded into a `SoundPool`. `play()` is a silent no-op until every sample
