@@ -150,7 +150,8 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     // ----------------------------------------------------------------- frame
 
     override fun render() {
-        val dt = min(Gdx.graphics.deltaTime, 0.035f)
+        // Paused (incl. resume countdown): keep drawing the frozen frame but advance nothing.
+        val dt = if (session.isPaused) 0f else min(Gdx.graphics.deltaTime, 0.035f)
         time += dt
         tick(dt)
         updateShards(dt)

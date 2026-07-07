@@ -13,9 +13,16 @@ class GameHostSession(
 
     private val scoreV = AtomicInteger(0)
     private val over = AtomicBoolean(false)
+    private val paused = AtomicBoolean(false)
+
+    init {
+        // The HUD's pause button / resume countdown flips this; the GL thread reads it.
+        chrome.onPauseStateChanged = { p -> paused.set(p) }
+    }
 
     override val score: Int get() = scoreV.get()
     override val isOver: Boolean get() = over.get()
+    override val isPaused: Boolean get() = paused.get()
 
     override fun setScore(v: Int) {
         if (over.get()) return

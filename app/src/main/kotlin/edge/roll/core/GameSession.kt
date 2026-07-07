@@ -8,6 +8,9 @@ interface GameSession {
     val score: Int
     val isOver: Boolean
 
+    /** True while the run is paused (including the resume countdown); gameplay is frozen. */
+    val isPaused: Boolean
+
     /** Sets the HUD score. Ignored after gameOver(). */
     fun setScore(v: Int)
 

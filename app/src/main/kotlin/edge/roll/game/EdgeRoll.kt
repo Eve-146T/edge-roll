@@ -175,7 +175,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     private fun tryRoll(dx: Int, dz: Int) {
-        if (session.isOver || dying) return
+        if (session.isOver || dying || session.isPaused) return
         if (rolling) { qx = dx; qz = dz; hasQueued = true; return }
         startRoll(dx, dz)
     }
@@ -274,7 +274,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     override fun tick(dt: Float) {
-        if (!session.isOver) {
+        if (!session.isOver && !session.isPaused) {
             if (rolling) {
                 rollT += dt / rollDur
                 if (rollT >= 1f) finishRoll()
