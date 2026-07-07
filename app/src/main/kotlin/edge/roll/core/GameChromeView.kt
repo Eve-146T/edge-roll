@@ -4,12 +4,14 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.View
@@ -34,6 +36,9 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
     private val density = resources.displayMetrics.density
     private fun dp(v: Float) = (v * density).toInt()
+
+    /** Running on Android TV / Google TV — pause is via the remote, not a touch chip. */
+    private val isTv = activity.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
 
     private val scoreText = TextView(activity).apply {
         textSize = 52f
@@ -62,6 +67,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
     private val pauseBtn = PauseButton(activity).apply {
         isClickable = true
+        isFocusable = false          // touch-only affordance: never steals D-pad focus from the game
         contentDescription = "Pause"
         setOnClickListener { pauseGame() }
     }
@@ -120,6 +126,8 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         addView(countdownText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
         })
+
+        if (isTv) pauseBtn.visibility = GONE   // TV pauses via the remote (play/pause / menu)
 
         // Keep the HUD clear of the status bar / navigation bar / display cutout.
         setOnApplyWindowInsetsListener { _, insets ->
@@ -258,23 +266,37 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             }
         }
 
+        fun roundedBg(fill: Int, stroke: Int, strokeW: Int) = GradientDrawable().apply {
+            cornerRadius = dp(30f).toFloat(); setColor(fill)
+            if (strokeW > 0) setStroke(dp(strokeW.toFloat()), stroke)
+        }
         fun button(label: String, filled: Boolean, onClick: () -> Unit) = TextView(activity).apply {
             text = label
             textSize = 19f
             typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(dp(36f), dp(13f), dp(36f), dp(13f))
+            // D-pad-navigable on TV; a white ring + slight scale mark the focused button.
+            // In touch mode (phone) requestFocus is a no-op, so there's no visual change.
+            isFocusable = true
+            isFocusableInTouchMode = false
+            val normal: GradientDrawable
+            val focused: GradientDrawable
             if (filled) {
                 setTextColor(0xFF14102E.toInt())
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(30f).toFloat(); setColor(accent)
-                }
+                normal = roundedBg(accent, 0, 0)
+                focused = roundedBg(accent, Color.WHITE, 3)
             } else {
                 setTextColor(Color.WHITE)
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(30f).toFloat(); setColor(Color.TRANSPARENT)
-                    setStroke(dp(2f), Palette.withAlpha(Color.WHITE, 140))
-                }
+                normal = roundedBg(Color.TRANSPARENT, Palette.withAlpha(Color.WHITE, 140), 2)
+                focused = roundedBg(Palette.withAlpha(Color.WHITE, 40), Color.WHITE, 3)
+            }
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), focused)
+                addState(intArrayOf(), normal)
+            }
+            setOnFocusChangeListener { v, has ->
+                v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(120).start()
             }
             setOnClickListener {
                 SoundFx.play("tap"); Haptics.click()
@@ -284,13 +306,14 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
         // finish + relaunch (NOT recreate): libGDX only disposes GL resources when
         // the activity is truly finishing, so recreate() would leak native meshes.
-        card.addView(button("RESTART", true) {
+        val restartBtn = button("RESTART", true) {
             val relaunch = activity.intent
             activity.finish()
             @Suppress("DEPRECATION") activity.overridePendingTransition(0, 0)
             activity.startActivity(relaunch)
             @Suppress("DEPRECATION") activity.overridePendingTransition(0, 0)
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        card.addView(restartBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         card.addView(button("EXIT", false) { activity.finish() },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10f)
@@ -306,6 +329,8 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
         overCard = scrim
         addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // Put D-pad focus on RESTART for TV remotes (no-op on a phone in touch mode).
+        restartBtn.post { restartBtn.requestFocus() }
     }
 
     /** Pause the run: freeze the game and show the tap-anywhere-to-resume scrim. */
@@ -382,8 +407,20 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         countdownText.alpha = 0f
         paused = false
         resuming = false
-        pauseBtn.visibility = VISIBLE
+        if (!isTv) pauseBtn.visibility = VISIBLE
         onPauseStateChanged?.invoke(false)
+    }
+
+    /** True while the run is paused (read by GameActivity for remote select-to-resume). */
+    fun isPausedNow() = paused
+
+    /** Toggle pause from a TV remote / gamepad system key. No-op after game over. */
+    fun togglePause() {
+        when {
+            overCard != null || resuming -> {}
+            paused -> resumeGame()
+            else -> pauseGame()
+        }
     }
 
     private fun appVersionLabel(): String = try {

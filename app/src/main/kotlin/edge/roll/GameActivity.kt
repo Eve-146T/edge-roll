@@ -1,6 +1,7 @@
 package edge.roll
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.FrameLayout
 import com.badlogic.gdx.backends.android.AndroidApplication
@@ -13,14 +14,27 @@ import edge.roll.game.EdgeRoll
 /** Single-game launcher host: builds the shared HUD over the libGDX surface and runs Edge Roll. */
 class GameActivity : AndroidApplication() {
 
+    private lateinit var chrome: GameChromeView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val chrome = GameChromeView(this, ACCENT)
+        chrome = GameChromeView(this, ACCENT)
         chrome.setBest(Scores.best(SCORE_ID))
         val session = GameHostSession(this, SCORE_ID, chrome)
         val game = EdgeRoll(session)
+
+        // Repeatable renderer benchmark, driven from adb, e.g.:
+        //   adb shell am start -n edge.roll/.GameActivity \
+        //       --ez bench true --ei benchWidth 9 --ei benchDepth 26 --ei benchSecs 14
+        if (intent?.getBooleanExtra("bench", false) == true) {
+            game.benchmark = true
+            game.benchWidth = intent.getIntExtra("benchWidth", game.benchWidth)
+            game.benchDepth = intent.getIntExtra("benchDepth", game.benchDepth)
+            game.benchSecs = intent.getIntExtra("benchSecs", game.benchSecs.toInt()).toFloat()
+            game.benchWarmup = intent.getIntExtra("benchWarmup", game.benchWarmup.toInt()).toFloat()
+        }
 
         val config = AndroidApplicationConfiguration().apply {
             useImmersiveMode = true
@@ -31,11 +45,34 @@ class GameActivity : AndroidApplication() {
             depth = 16
         }
         val gameView = initializeForView(game, config)
+        // The GL surface holds D-pad/remote focus during play so key events reach libGDX;
+        // the game-over card takes focus when shown (see GameChromeView).
+        gameView.isFocusableInTouchMode = true
 
         val root = FrameLayout(this)
         root.addView(gameView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         root.addView(chrome, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         setContentView(root)
+        gameView.requestFocus()
+    }
+
+    /**
+     * TV remote / gamepad system keys. Directional + select keys fall through to libGDX
+     * (gameplay) or, on game-over, to the focused HUD buttons. Here we only intercept
+     * play/pause-style keys to toggle pause, and select-to-resume while paused.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_BUTTON_START,
+                KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    chrome.togglePause(); return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A ->
+                    if (chrome.isPausedNow()) { chrome.resumeGame(); return true }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private companion object {

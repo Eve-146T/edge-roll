@@ -2,6 +2,7 @@ package edge.roll.core
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input.Keys
 import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
@@ -49,6 +50,17 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     var time = 0f
         private set
 
+    /** Whole-[render] CPU time, ms. Note: on Android this absorbs the vsync back-pressure
+     *  stall (the driver blocks inside a GL call), so it's ~frame time when vsync-capped. */
+    var frameCpuMs = 0f
+        private set
+
+    /** The stall-free per-frame CPU **work**: [tick] (game update) + [renderWorld] (batch build),
+     *  in ms — no GL flush/clear/swap. This is the honest "CPU cost per frame" that stays
+     *  meaningful even when wall-clock is pinned at the 60-fps vsync ceiling. */
+    var frameWorkMs = 0f
+        private set
+
     val sw: Int get() = Gdx.graphics.width
     val sh: Int get() = Gdx.graphics.height
 
@@ -67,6 +79,13 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     open fun onDrag(x: Float, y: Float, dx: Float, dy: Float) {}
     open fun onUp(x: Float, y: Float) {}
     open fun onSwipe(dir: Int) {}
+
+    /** A directional press from a D-pad / TV remote / keyboard ([LEFT]/[RIGHT]/[UP]/[DOWN]).
+     *  Separate from [onSwipe] so touch-swipe handling is never double-triggered. */
+    open fun onKeyDir(dir: Int) {}
+
+    /** The select / center / enter key (D-pad center, ENTER, gamepad A). */
+    open fun onSelect() {}
 
     companion object {
         const val LEFT = 0
@@ -143,6 +162,21 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
                 }
                 return true
             }
+
+            // D-pad / TV remote / keyboard. On game-over we don't consume, so the
+            // HUD's RESTART/EXIT buttons get D-pad focus navigation instead.
+            override fun keyDown(keycode: Int): Boolean {
+                if (session.isOver) return false
+                when (keycode) {
+                    Keys.DPAD_LEFT -> onKeyDir(LEFT)
+                    Keys.DPAD_RIGHT -> onKeyDir(RIGHT)
+                    Keys.DPAD_UP -> onKeyDir(UP)
+                    Keys.DPAD_DOWN -> onKeyDir(DOWN)
+                    Keys.CENTER, Keys.ENTER, Keys.BUTTON_A, Keys.SPACE -> onSelect()
+                    else -> return false
+                }
+                return true
+            }
         }
         init()
     }
@@ -150,10 +184,13 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     // ----------------------------------------------------------------- frame
 
     override fun render() {
+        val cpuT0 = System.nanoTime()
         // Paused (incl. resume countdown): keep drawing the frozen frame but advance nothing.
         val dt = if (session.isPaused) 0f else min(Gdx.graphics.deltaTime, 0.035f)
         time += dt
+        val tickT0 = System.nanoTime()
         tick(dt)
+        val tickNs = System.nanoTime() - tickT0
         updateShards(dt)
 
         Gdx.gl.glViewport(0, 0, sw, sh)
@@ -183,7 +220,10 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
         cam.update()
 
         batch.begin(cam)
+        val rwT0 = System.nanoTime()
         renderWorld(batch, env)
+        val rwNs = System.nanoTime() - rwT0
+        frameWorkMs = (tickNs + rwNs) / 1_000_000f
         renderShards(batch)
         batch.end()
 
@@ -201,6 +241,7 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
             Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
             flashColor.a = (flashColor.a - 2.6f * dt).coerceAtLeast(0f)
         }
+        frameCpuMs = (System.nanoTime() - cpuT0) / 1_000_000f
     }
 
     private val uiMatrix = Matrix4()

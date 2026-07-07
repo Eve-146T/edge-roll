@@ -11,11 +11,14 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
+import com.badlogic.gdx.Gdx
+import edge.roll.core.BoxBatch
 import edge.roll.core.Gdx3DGame
 import edge.roll.core.GameSession
 import edge.roll.core.Haptics
 import edge.roll.core.SoundFx
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -37,6 +40,9 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         var timer = 0f; var total = 1f      // crumble countdown after cube leaves
         var visited = false
         var fy = 0f; var fvy = 0f; var rot = 0f; var life = 0.9f
+        var vis = true                      // in view frustum this frame (set by updateTiles)
+        var spawn = 1f                      // grow-in progress 0->1 (1 = fully materialized)
+        var rscale = 1f                     // current render scale (driven by spawn)
     }
 
     private lateinit var tileModel: Model
@@ -50,6 +56,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
 
     private val tiles = ArrayList<Tile>()
     private val map = HashMap<Long, Tile>()
+    private lateinit var tileBatch: BoxBatch   // all opaque tiles → one draw call
 
     private var cubeGx = 0
     private var cubeGz = 0
@@ -72,6 +79,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     private val deadPos = Vector3(); private val deadVel = Vector3()
     private val deadAxis = Vector3(1f, 0f, 0f)
     private var deadRot = 0f; private var deadSpin = 0f
+    private var spawnAnim = false           // new tiles fade/grow in once the run is live
     private var genX = 0; private var genZ = -1
     private var hue = (System.currentTimeMillis() % 360L).toFloat()
     private var nextMilestone = 20
@@ -80,6 +88,25 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     private val camLook = Vector3(0f, 0.4f, -2.2f)
     private val tmpV = Vector3(); private val tmpV2 = Vector3()
     private var downX = 0f; private var downY = 0f; private var consumed = true
+
+    // ---- benchmark mode: set via intent extras before create() (see GameActivity) ----
+    var benchmark = false
+    var benchWidth = 9
+    var benchDepth = 26
+    var benchSecs = 38f
+    var benchWarmup = 22f     // seconds skipped before collecting (debug-build JIT warms ~20s under throttle)
+    private var tileCap = 340   // headroom for the deeper render distance (RENDER_AHEAD)
+    // Ablation toggles (adb `setprop debug.edgeroll.nobatch 1` / `.nocull 1`) — for
+    // benchmarking the contribution of each optimization; both off in normal play.
+    private var noBatch = false
+    private var noCull = false
+    private var lastDrawn = 0
+    private var benchElapsed = 0f
+    private var benchWinT = 0f
+    private val benchAll = ArrayList<Float>()   // all post-warmup wall-clock frame times (ms)
+    private val benchWin = ArrayList<Float>()   // current 1s window
+    private val benchCpuAll = ArrayList<Float>() // per-frame CPU time (excludes vsync wait)
+    private var benchDone = false
 
     private fun crumbleTime() = max(0.42f, 1.2f - session.score * 0.01f)
     private fun dwellLimit() = crumbleTime() + 0.8f
@@ -96,16 +123,34 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         studFront = ModelInstance(studModel)
         bgTop = gdxHsv(hue + 30f, 0.5f, 0.4f)
         bgBottom = gdxHsv(hue + 75f, 0.75f, 0.05f)  // near-black abyss
-        for (x in -1..1) for (z in -1..1) addTile(x, z, false)
-        generate()
+        if (benchmark) {
+            buildBenchScene()
+        } else {
+            for (x in -1..1) for (z in -1..1) addTile(x, z, false)
+            generate()
+        }
+        noBatch = boolProp("debug.edgeroll.nobatch")
+        noCull = boolProp("debug.edgeroll.nocull")
+        tileBatch = BoxBatch(0.96f, 0.26f, 0.96f, tileCap + 8)
         cam.position.set(camPos)
         cam.lookAt(camLook)
         cam.update()
-        session.banner("SWIPE TO ROLL")
+        spawnAnim = !benchmark   // from here on, freshly generated tiles animate in
+        if (!benchmark) session.banner("SWIPE TO ROLL")
+    }
+
+    /** Deterministic static stress field for repeatable renderer benchmarks. */
+    private fun buildBenchScene() {
+        tileCap = benchWidth * benchDepth + 16
+        val halfW = benchWidth / 2
+        for (gz in 0 downTo -(benchDepth - 1))
+            for (gx in -halfW..halfW)
+                addTile(gx, gz, false)
+        Gdx.app.log(BENCH, "SCENE tiles=${tiles.size} width=$benchWidth depth=$benchDepth secs=$benchSecs")
     }
 
     private fun addTile(gx: Int, gz: Int, gem: Boolean) {
-        if (map.containsKey(key(gx, gz)) || tiles.size > 220) return
+        if (map.containsKey(key(gx, gz)) || tiles.size > tileCap) return
         val base = if (gem) Color(1f, 0.82f, 0.25f, 1f) else gdxHsv(hue - gz * 5f, 0.62f, 0.95f)
         val inst = ModelInstance(tileModel)
         val ca = ColorAttribute.createDiffuse(base)
@@ -117,6 +162,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         val t = Tile(gx, gz, inst, ca, bl, base, gem, gi, MathUtils.random(6.28f),
             MathUtils.randomBoolean(),
             MathUtils.random(120f, 260f) * (if (MathUtils.randomBoolean()) 1f else -1f))
+        t.spawn = if (spawnAnim) 0f else 1f   // tiles laid down mid-run grow in; the start field is instant
         tiles.add(t)
         map[key(gx, gz)] = t
     }
@@ -124,7 +170,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     /** Random-walk main path (always connected) + holey side pads + gem spurs. */
     private fun generate() {
         var guard = 0
-        while (genZ > cubeGz - 16 && guard++ < 300 && tiles.size < 200) {
+        while (genZ > cubeGz - RENDER_AHEAD && guard++ < 600 && tiles.size < tileCap) {
             val dist = -genZ
             if (MathUtils.randomBoolean(min(0.42f, 0.2f + dist * 0.002f))) {
                 // lateral wiggle (more frequent the further you get)
@@ -168,6 +214,16 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     override fun onTap(x: Float, y: Float) = tryRoll(0, -1) // tap = roll forward
+
+    // TV remote / D-pad / keyboard (absolute directions, same as a swipe).
+    override fun onKeyDir(dir: Int) = when (dir) {
+        Gdx3DGame.LEFT -> tryRoll(-1, 0)
+        Gdx3DGame.RIGHT -> tryRoll(1, 0)
+        Gdx3DGame.UP -> tryRoll(0, -1)   // up = forward, into the screen
+        else -> tryRoll(0, 1)            // DOWN = backward
+    }
+
+    override fun onSelect() = tryRoll(0, -1) // center/enter = roll forward
 
     private fun swipeTo(mx: Float, my: Float) {
         if (abs(mx) > abs(my)) tryRoll(if (mx > 0) 1 else -1, 0)
@@ -274,6 +330,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     override fun tick(dt: Float) {
+        if (benchmark) { benchTick(dt); return }
         if (!session.isOver && !session.isPaused) {
             if (rolling) {
                 rollT += dt / rollDur
@@ -327,6 +384,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
 
     private fun updateTiles(dt: Float) {
         val dl = dwellLimit()
+        val fr = cam.frustum
         var i = tiles.size - 1
         while (i >= 0) {
             val t = tiles[i]
@@ -334,12 +392,25 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
                 map.remove(key(t.gx, t.gz))
                 tiles.removeAt(i); i--; continue
             }
+            // Frustum visibility (grid-based, stable for non-falling tiles). An off-screen
+            // ALIVE tile animates to nothing visible, so skip all its per-frame work — this
+            // is what makes a large render distance cheap. Reused by renderWorld.
+            t.vis = noCull || t.state == FALLING || fr.sphereInFrustum(t.gx.toFloat(), 0f, t.gz.toFloat(), TILE_CULL_R)
+            if (!t.vis && t.state == ALIVE) { i--; continue }
             val bob = sin(time * 1.7f + t.phase) * 0.045f
             val c = t.colA.color
             when (t.state) {
-                ALIVE -> {
+                ALIVE -> if (t.spawn >= 1f) {                        // settled: cheap path (no scale/lerp)
                     t.inst.transform.setToTranslation(t.gx.toFloat(), bob, t.gz.toFloat())
                     c.set(t.baseCol)
+                } else {                                             // materializing: grow + rise + colour-fade
+                    t.spawn = min(1f, t.spawn + dt / SPAWN_DUR)
+                    val e = 1f - (1f - t.spawn) * (1f - t.spawn)     // easeOutQuad
+                    t.rscale = 0.12f + 0.88f * e
+                    t.inst.transform
+                        .setToTranslation(t.gx.toFloat(), bob - (1f - e) * 0.45f, t.gz.toFloat())
+                        .scale(t.rscale, t.rscale, t.rscale)
+                    c.set(t.baseCol).lerp(bgTop, 1f - e)             // out of the sky colour
                 }
                 CRUMBLE -> {
                     t.timer -= dt
@@ -386,19 +457,83 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     override fun renderWorld(batch: ModelBatch, env: Environment) {
+        var drawn = 0
+        tileBatch.begin()
         for (i in tiles.indices) {
             val t = tiles[i]
-            batch.render(t.inst, env)
-            if (t.gem && t.gemInst != null) batch.render(t.gemInst, env)
+            if (!t.vis) continue                            // frustum-culled in updateTiles
+            if (noBatch || t.state == FALLING) {
+                batch.render(t.inst, env); drawn++          // per-tile (ablation) / fading blended draw
+            } else {
+                // opaque ALIVE/CRUMBLE tile → batched into one mesh (colour incl. tint/pulse)
+                t.inst.transform.getTranslation(tmpV)
+                tileBatch.add(tmpV.x, tmpV.y, tmpV.z, t.colA.color.toFloatBits(), t.rscale)
+            }
+            if (t.gem && t.gemInst != null) { batch.render(t.gemInst, env); drawn++ }
         }
+        if (!noBatch && tileBatch.count() > 0) { tileBatch.flush(batch, env); drawn++ }  // every opaque tile: 1 call
         if (!dying || deadPos.y > -50f) {
             batch.render(cubeInst, env)
             batch.render(studTop, env)
             batch.render(studFront, env)
+            drawn += 3
         }
+        lastDrawn = drawn
     }
 
+    override fun dispose() {
+        if (::tileBatch.isInitialized) tileBatch.dispose()
+        super.dispose()
+    }
+
+    // ------------------------------------------------------- benchmark harness
+
+    private fun benchTick(dt: Float) {
+        val raw = Gdx.graphics.rawDeltaTime
+        benchElapsed += raw
+        if (benchElapsed > benchWarmup && !benchDone) {   // skip warmup / shader-compile spikes
+            val ms = raw * 1000f
+            benchAll.add(ms); benchWin.add(ms); benchCpuAll.add(frameWorkMs)
+            benchWinT += raw
+            if (benchWinT >= 1f) { logStats("win", benchWin); benchWin.clear(); benchWinT = 0f }
+        }
+        if (benchElapsed >= benchSecs && !benchDone) {
+            benchDone = true
+            logStats("WORK", benchCpuAll)     // stall-free CPU work/frame (tick+build); before RESULT sentinel
+            logStats("RESULT", benchAll)
+            Gdx.app.exit()
+        }
+        // exercise the same per-frame update + render path as gameplay (minus input/death)
+        updateCube(dt)
+        updateTiles(dt)
+        updateCam(dt)
+    }
+
+    private fun logStats(kind: String, ms: ArrayList<Float>) {
+        if (ms.isEmpty()) return
+        val sorted = ms.toFloatArray(); sorted.sort()
+        val n = sorted.size
+        var sum = 0f; for (v in sorted) sum += v
+        val avg = sum / n
+        fun pct(p: Float) = sorted[min(n - 1, ceil(p * (n - 1)).toInt())]
+        val p50 = pct(0.5f); val p95 = pct(0.95f); val p99 = pct(0.99f)
+        Gdx.app.log(BENCH, "$kind frames=$n avgMs=${f2(avg)} fps=${f2(1000f / avg)} " +
+            "p50=${f2(p50)} p95=${f2(p95)} p99=${f2(p99)} minFps=${f2(1000f / p99)} " +
+            "tiles=${tiles.size} drawn=$lastDrawn")
+    }
+
+    private fun f2(v: Float) = (kotlin.math.round(v * 100f) / 100f).toString()
+
+    private fun boolProp(k: String): Boolean = try {
+        (Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
+            .invoke(null, k) as String) == "1"
+    } catch (e: Throwable) { false }
+
     private companion object {
+        const val BENCH = "EdgeBench"
+        const val TILE_CULL_R = 0.9f   // bounding-sphere radius for frustum culling a tile
+        const val RENDER_AHEAD = 28    // tiles generated/visible ahead of the cube (was 16)
+        const val SPAWN_DUR = 0.34f    // seconds for a freshly generated tile to grow in
         const val ALIVE = 0; const val CRUMBLE = 1; const val FALLING = 2
         const val CUBE_Y = 0.6f    // resting cube center height
         const val TILE_TOP = 0.13f // tile top surface / tumble pivot height

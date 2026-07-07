@@ -1,0 +1,18 @@
+--------- beginning of main
+I/EdgeBench(16307): SCENE tiles=1020 width=17 depth=60 secs=42.0
+I/EdgeBench(16307): win frames=7 avgMs=146.11 fps=6.84 p50=146.24 p95=147.97 p99=147.97 minFps=6.76 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=153.63 fps=6.51 p50=145.78 p95=202.82 p99=202.82 minFps=4.93 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=145.42 fps=6.88 p50=145.74 p95=147.1 p99=147.1 minFps=6.8 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=145.68 fps=6.86 p50=145.88 p95=148.6 p99=148.6 minFps=6.73 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=144.07 fps=6.94 p50=144.18 p95=147.19 p99=147.19 minFps=6.79 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.82 fps=6.95 p50=143.96 p95=145.93 p99=145.93 minFps=6.85 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.55 fps=6.97 p50=145.02 p95=145.97 p99=145.97 minFps=6.85 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.86 fps=6.95 p50=144.46 p95=145.05 p99=145.05 minFps=6.89 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=144.58 fps=6.92 p50=144.47 p95=147.16 p99=147.16 minFps=6.8 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.63 fps=6.96 p50=143.24 p95=145.78 p99=145.78 minFps=6.86 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.81 fps=6.95 p50=143.19 p95=147.58 p99=147.58 minFps=6.78 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=142.91 fps=7.0 p50=142.76 p95=145.6 p99=145.6 minFps=6.87 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.6 fps=6.96 p50=143.5 p95=146.04 p99=146.04 minFps=6.85 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=7 avgMs=143.17 fps=6.98 p50=143.8 p95=145.62 p99=145.62 minFps=6.87 tiles=1020 drawn=1023
+I/EdgeBench(16307): win frames=8 avgMs=142.53 fps=7.02 p50=142.55 p95=145.58 p99=145.58 minFps=6.87 tiles=1020 drawn=1023
+I/EdgeBench(16307): RESULT frames=111 avgMs=144.68 fps=6.91 p50=144.38 p95=147.58 p99=148.7 minFps=6.73 tiles=1020 drawn=1023

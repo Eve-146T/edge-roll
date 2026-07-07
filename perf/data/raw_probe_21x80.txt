@@ -1,0 +1,16 @@
+--------- beginning of main
+I/EdgeBench(15633): SCENE tiles=1680 width=21 depth=80 secs=34.0
+I/EdgeBench(15633): win frames=37 avgMs=27.64 fps=36.18 p50=27.66 p95=28.76 p99=29.22 minFps=34.22 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=35 avgMs=28.86 fps=34.65 p50=27.27 p95=28.65 p99=83.32 minFps=12.0 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=38 avgMs=26.8 fps=37.32 p50=26.58 p95=28.87 p99=29.57 minFps=33.82 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=38 avgMs=26.75 fps=37.39 p50=26.6 p95=28.8 p99=29.53 minFps=33.86 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=38 avgMs=26.73 fps=37.41 p50=26.58 p95=29.59 p99=31.72 minFps=31.53 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=39 avgMs=26.06 fps=38.37 p50=25.95 p95=27.69 p99=28.33 minFps=35.29 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=38 avgMs=26.36 fps=37.94 p50=26.27 p95=28.74 p99=29.07 minFps=34.4 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=38 avgMs=26.53 fps=37.7 p50=26.35 p95=29.04 p99=31.38 minFps=31.87 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=39 avgMs=25.82 fps=38.73 p50=25.76 p95=27.21 p99=28.05 minFps=35.65 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=39 avgMs=25.91 fps=38.6 p50=25.75 p95=27.51 p99=28.44 minFps=35.16 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=39 avgMs=25.7 fps=38.9 p50=25.62 p95=27.72 p99=31.07 minFps=32.19 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=39 avgMs=25.92 fps=38.58 p50=25.94 p95=26.9 p99=29.62 minFps=33.76 tiles=1680 drawn=4
+I/EdgeBench(15633): win frames=40 avgMs=25.5 fps=39.22 p50=25.54 p95=26.71 p99=26.9 minFps=37.18 tiles=1680 drawn=4
+I/EdgeBench(15633): RESULT frames=531 avgMs=26.43 fps=37.84 p50=26.25 p95=28.43 p99=29.59 minFps=33.79 tiles=1680 drawn=4

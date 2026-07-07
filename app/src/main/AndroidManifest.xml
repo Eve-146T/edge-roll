@@ -4,11 +4,18 @@
 
     <uses-permission android:name="android.permission.VIBRATE"/>
 
+    <!-- Runs on TVs (no touchscreen) as well as phones; the game is fully playable
+         with a D-pad / TV remote, so none of these are required. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <uses-feature android:name="android.hardware.gamepad" android:required="false"/>
+
     <application
         android:name=".App"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
         android:theme="@style/GameTheme"
         android:allowBackup="true">
 
@@ -16,12 +23,15 @@
             android:name=".GameActivity"
             android:exported="true"
             android:theme="@style/GameTheme"
+            android:banner="@drawable/tv_banner"
             android:screenOrientation="portrait"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode|density|fontScale"
             tools:ignore="LockedOrientationActivity,DiscouragedApi">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+                <!-- Appear on the Android TV / Google TV home screen too. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
     </application>

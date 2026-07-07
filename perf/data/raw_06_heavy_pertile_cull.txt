@@ -1,0 +1,18 @@
+--------- beginning of main
+I/EdgeBench(16383): SCENE tiles=1020 width=17 depth=60 secs=42.0
+I/EdgeBench(16383): win frames=11 avgMs=98.77 fps=10.12 p50=100.03 p95=101.37 p99=101.37 minFps=9.86 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=10 avgMs=105.11 fps=9.51 p50=100.68 p95=154.41 p99=154.41 minFps=6.48 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=98.96 fps=10.11 p50=99.04 p95=102.58 p99=102.58 minFps=9.75 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=97.59 fps=10.25 p50=96.39 p95=101.07 p99=101.07 minFps=9.89 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=97.85 fps=10.22 p50=97.31 p95=102.33 p99=102.33 minFps=9.77 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=97.25 fps=10.28 p50=97.56 p95=99.74 p99=99.74 minFps=10.03 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=97.35 fps=10.27 p50=97.56 p95=99.53 p99=99.53 minFps=10.05 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=98.7 fps=10.13 p50=99.01 p95=100.76 p99=100.76 minFps=9.92 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=96.76 fps=10.33 p50=96.25 p95=99.13 p99=99.13 minFps=10.09 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=99.24 fps=10.08 p50=98.83 p95=105.56 p99=105.56 minFps=9.47 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=97.9 fps=10.21 p50=97.42 p95=104.38 p99=104.38 minFps=9.58 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=96.29 fps=10.39 p50=95.99 p95=99.23 p99=99.23 minFps=10.08 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=96.68 fps=10.34 p50=95.73 p95=104.21 p99=104.21 minFps=9.6 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=97.44 fps=10.26 p50=97.95 p95=99.52 p99=99.52 minFps=10.05 tiles=1020 drawn=663
+I/EdgeBench(16383): win frames=11 avgMs=96.94 fps=10.32 p50=96.71 p95=99.76 p99=99.76 minFps=10.02 tiles=1020 drawn=663
+I/EdgeBench(16383): RESULT frames=164 avgMs=98.15 fps=10.19 p50=97.64 p95=101.26 p99=105.56 minFps=9.47 tiles=1020 drawn=663

@@ -1,0 +1,12 @@
+# Motorola G7 Power (moto g(7) power / codename "ocean")
+# SoC: Qualcomm msm8953 (Snapdragon 632), GPU: Adreno 506
+# Android 15 (LineageOS), Magisk root
+# Original (stock) clock state captured 2026-07-07 before throttling:
+
+CPU policy0 (cores 0-3): governor=schedutil  max=1804800 kHz  min=614400 kHz
+CPU policy4 (cores 4-7): governor=schedutil  max=1804800 kHz  min=633600 kHz
+CPU available freqs (kHz): 614400 883200 1036800 1363200 1536000 1670400 1804800
+
+GPU governor=msm-adreno-tz  min_freq=133330000  max_freq=725000000
+GPU pwrlevels: max_pwrlevel=0 min_pwrlevel=7 num_pwrlevels=8
+GPU available freqs (Hz, idx0..7): 725000000 650000000 560000000 510000000 400000000 320000000 216000000 133330000

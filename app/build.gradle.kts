@@ -25,7 +25,7 @@ android {
 
     defaultConfig {
         applicationId = "edge.roll"
-        minSdk = 29
+        minSdk = 28          // Android 9 (Pie) and up
         targetSdk = 35
         versionCode = 4
         versionName = "1.0.3"
