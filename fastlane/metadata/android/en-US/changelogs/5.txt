@@ -1,0 +1,6 @@
+- Pause button with tap-to-resume countdown
+- Turn sound effects and vibration on or off
+- Google TV support (D-pad / remote)
+- Android 9 (Pie) support
+- Longer draw distance, new tile fade-in, and a reworked fall-to-your-doom
+- Performance and visual polish
