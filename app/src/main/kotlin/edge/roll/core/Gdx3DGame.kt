@@ -163,10 +163,12 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
                 return true
             }
 
-            // D-pad / TV remote / keyboard. On game-over we don't consume, so the
-            // HUD's RESTART/EXIT buttons get D-pad focus navigation instead.
+            // D-pad / TV remote / keyboard. On game-over *and while paused* we don't
+            // consume, so the HUD's focusable buttons (RESTART/EXIT, or the pause
+            // menu's RESUME + sound/vibration toggles) get D-pad focus navigation
+            // instead of the keys being eaten by the frozen game.
             override fun keyDown(keycode: Int): Boolean {
-                if (session.isOver) return false
+                if (session.isOver || session.isPaused) return false
                 when (keycode) {
                     Keys.DPAD_LEFT -> onKeyDir(LEFT)
                     Keys.DPAD_RIGHT -> onKeyDir(RIGHT)

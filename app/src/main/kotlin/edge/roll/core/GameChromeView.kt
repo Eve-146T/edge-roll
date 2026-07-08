@@ -71,9 +71,17 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
     private val pauseBtn = PauseButton(activity).apply {
         isClickable = true
-        isFocusable = false          // touch-only affordance: never steals D-pad focus from the game
+        // On a phone it's a touch-only affordance that never steals D-pad focus. On TV it's a
+        // real focusable control: navigate to it with the remote and press OK to pause. Either
+        // way the dedicated remote pause/menu key (see GameActivity) also pauses.
+        isFocusable = isTv
+        isFocusableInTouchMode = false
         contentDescription = "Pause"
         setOnClickListener { pauseGame() }
+        setOnFocusChangeListener { v, has ->
+            v.animate().scaleX(if (has) 1.12f else 1f).scaleY(if (has) 1.12f else 1f).setDuration(120).start()
+            (v as PauseButton).focused = has
+        }
     }
 
     private val countdownText = TextView(activity).apply {
@@ -104,7 +112,9 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
     /**
      * A round, icon-only toggle (translucent black fill, accent ring). Reflects [isOn];
      * tapping flips it, confirms with sound + haptic honouring the *new* state (muting is
-     * silent, un-muting isn't), then repaints. Touch-only: never takes D-pad focus.
+     * silent, un-muting isn't), then repaints. [focusable] makes it a D-pad control (used
+     * for the TV pause menu): it grows and gains a bright white ring when focused, so the
+     * remote user can see and toggle it. Phone chips pass focusable = false and stay touch-only.
      */
     private fun makeToggle(
         iconOn: Int,
@@ -112,20 +122,27 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         label: String,
         isOn: () -> Boolean,
         set: (Boolean) -> Unit,
+        focusable: Boolean = false,
     ): ImageView = ImageView(activity).apply {
         val pad = dp(11f)
         setPadding(pad, pad, pad, pad)
         scaleType = ImageView.ScaleType.FIT_CENTER
         isClickable = true
-        isFocusable = false
+        isFocusable = focusable
+        isFocusableInTouchMode = false
         fun paint() {
             val on = isOn()
+            val hasFocus = isFocused
             setImageResource(if (on) iconOn else iconOff)
             imageTintList = ColorStateList.valueOf(if (on) accent else Palette.withAlpha(Color.WHITE, 110))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Palette.withAlpha(Color.BLACK, 115))
-                setStroke(dp(1f), Palette.withAlpha(if (on) accent else Color.WHITE, if (on) 150 else 60))
+                when {
+                    hasFocus -> setStroke(dp(2f), Color.WHITE)
+                    on -> setStroke(dp(1f), Palette.withAlpha(accent, 150))
+                    else -> setStroke(dp(1f), Palette.withAlpha(Color.WHITE, 60))
+                }
             }
             contentDescription = "$label ${if (on) "on" else "off"}"
         }
@@ -134,6 +151,10 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             set(!isOn())
             SoundFx.play("tap"); Haptics.tick()
             paint()
+        }
+        if (focusable) setOnFocusChangeListener { v, has ->
+            paint()
+            v.animate().scaleX(if (has) 1.12f else 1f).scaleY(if (has) 1.12f else 1f).setDuration(120).start()
         }
     }
 
@@ -179,14 +200,15 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         })
         // Sound + vibration toggles, bottom-left. Shown only pre-run and while paused
         // (see hideOptions / pauseGame / resumeGame); hidden during an active run.
+        // These are the touch-only phone chips; on TV they're never shown here (a D-pad
+        // can't reach them during play) — the pause menu carries focusable copies instead.
         addView(toggleBox, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.BOTTOM or Gravity.START
             leftMargin = dp(20f); bottomMargin = dp(28f)
         })
-        post { showToggles() }   // fade the option chips in at launch
+        if (isTv) toggleBox.visibility = GONE else post { showToggles() }   // fade the chips in at launch (phone)
 
-        // Hidden until the run actually begins (shown by hideOptions); TV never shows it
-        // at all — pause there is via the remote (play/pause / menu).
+        // Hidden until the run actually begins (shown by hideOptions).
         pauseBtn.visibility = GONE
 
         // Keep the HUD clear of the status bar / cutout (top) and nav bar / cutout (bottom-left).
@@ -234,17 +256,17 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         bestText.text = if (best > 0) "BEST $best" else ""
     }
 
-    /** Fade the pause chip in (used when a run begins and after a resume). No-op on TV. */
+    /** Fade the pause chip in (used when a run begins and after a resume). */
     private fun revealPause() {
-        if (isTv) return
         pauseBtn.animate().cancel()
         pauseBtn.alpha = 0f
         pauseBtn.visibility = VISIBLE
         pauseBtn.animate().alpha(1f).setDuration(220).start()
     }
 
-    /** Fade the sound / vibration / slow-mo chips in (launch and while paused). */
+    /** Fade the bottom-left sound / vibration chips in (phone launch and while paused). No-op on TV. */
     private fun showToggles() {
+        if (isTv) return
         toggleBox.animate().cancel()
         toggleBox.alpha = 0f
         toggleBox.visibility = VISIBLE
@@ -296,6 +318,49 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             .start()
     }
 
+    /** Rounded-pill background shared by the game-over and pause-menu buttons. */
+    private fun roundedBg(fill: Int, stroke: Int, strokeW: Int) = GradientDrawable().apply {
+        cornerRadius = dp(30f).toFloat(); setColor(fill)
+        if (strokeW > 0) setStroke(dp(strokeW.toFloat()), stroke)
+    }
+
+    /**
+     * A rounded pill button. D-pad-navigable on TV — a white ring + slight scale mark the
+     * focused button; in touch mode (phone) requestFocus is a no-op, so there's no focus state.
+     * (Parents that show it must not clip to padding, or the focus scale clips at the edges.)
+     */
+    private fun pillButton(label: String, filled: Boolean, onClick: () -> Unit) = TextView(activity).apply {
+        text = label
+        textSize = 19f
+        typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        setPadding(dp(36f), dp(13f), dp(36f), dp(13f))
+        isFocusable = true
+        isFocusableInTouchMode = false
+        val normal: GradientDrawable
+        val focused: GradientDrawable
+        if (filled) {
+            setTextColor(0xFF14102E.toInt())
+            normal = roundedBg(accent, 0, 0)
+            focused = roundedBg(accent, Color.WHITE, 3)
+        } else {
+            setTextColor(Color.WHITE)
+            normal = roundedBg(Color.TRANSPARENT, Palette.withAlpha(Color.WHITE, 140), 2)
+            focused = roundedBg(Palette.withAlpha(Color.WHITE, 40), Color.WHITE, 3)
+        }
+        background = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), focused)
+            addState(intArrayOf(), normal)
+        }
+        setOnFocusChangeListener { v, has ->
+            v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(120).start()
+        }
+        setOnClickListener {
+            SoundFx.play("tap"); Haptics.click()
+            onClick()
+        }
+    }
+
     fun showGameOver(score: Int, best: Int, isNewBest: Boolean) {
         if (overCard != null) return
         scoreText.visibility = GONE
@@ -313,6 +378,10 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(28f), dp(26f), dp(28f), dp(24f))
+            // A focused button scales up 1.06x; without this the extra width spills into the
+            // card's padding and gets clipped, so the focus ring looks cut off at the sides.
+            clipToPadding = false
+            clipChildren = false
             background = GradientDrawable().apply {
                 cornerRadius = dp(24f).toFloat()
                 setColor(0xFF1E1840.toInt())
@@ -364,44 +433,6 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             }
         }
 
-        fun roundedBg(fill: Int, stroke: Int, strokeW: Int) = GradientDrawable().apply {
-            cornerRadius = dp(30f).toFloat(); setColor(fill)
-            if (strokeW > 0) setStroke(dp(strokeW.toFloat()), stroke)
-        }
-        fun button(label: String, filled: Boolean, onClick: () -> Unit) = TextView(activity).apply {
-            text = label
-            textSize = 19f
-            typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(dp(36f), dp(13f), dp(36f), dp(13f))
-            // D-pad-navigable on TV; a white ring + slight scale mark the focused button.
-            // In touch mode (phone) requestFocus is a no-op, so there's no visual change.
-            isFocusable = true
-            isFocusableInTouchMode = false
-            val normal: GradientDrawable
-            val focused: GradientDrawable
-            if (filled) {
-                setTextColor(0xFF14102E.toInt())
-                normal = roundedBg(accent, 0, 0)
-                focused = roundedBg(accent, Color.WHITE, 3)
-            } else {
-                setTextColor(Color.WHITE)
-                normal = roundedBg(Color.TRANSPARENT, Palette.withAlpha(Color.WHITE, 140), 2)
-                focused = roundedBg(Palette.withAlpha(Color.WHITE, 40), Color.WHITE, 3)
-            }
-            background = StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_focused), focused)
-                addState(intArrayOf(), normal)
-            }
-            setOnFocusChangeListener { v, has ->
-                v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(120).start()
-            }
-            setOnClickListener {
-                SoundFx.play("tap"); Haptics.click()
-                onClick()
-            }
-        }
-
         // finish + relaunch (NOT recreate): libGDX only disposes GL resources when
         // the activity is truly finishing, so recreate() would leak native meshes.
         // The relaunch must stay INSIDE the current task: a fresh intent (never a
@@ -411,12 +442,12 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         // apps cannot suppress task transitions — whereas an in-task activity open
         // honours the theme's animations: RunSwapAnim (themes.xml) crossfades the
         // fresh run over the game-over screen instead of sliding it in.
-        val restartBtn = button("RESTART", true) {
+        val restartBtn = pillButton("RESTART", true) {
             activity.startActivity(Intent(activity, activity.javaClass))
             activity.finish()
         }
         card.addView(restartBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        card.addView(button("EXIT", false) { activity.finish() },
+        card.addView(pillButton("EXIT", false) { activity.finish() },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10f)
             })
@@ -453,6 +484,8 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         val box = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false   // focused controls scale up; don't clip their rings
+            clipToPadding = false
         }
         box.addView(TextView(activity).apply {
             text = "PAUSED"
@@ -462,7 +495,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             gravity = Gravity.CENTER
         })
         box.addView(TextView(activity).apply {
-            text = "tap anywhere to resume"
+            text = if (isTv) "press OK to resume" else "tap anywhere to resume"
             textSize = 15f
             setTextColor(Palette.withAlpha(Color.WHITE, 170))
             typeface = Typeface.DEFAULT_BOLD
@@ -475,22 +508,62 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         })
         pauseScrim = scrim
         addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        // Option chips are reachable while paused too — fade them in above the scrim.
-        showToggles()
+
+        if (isTv) {
+            // TV has no touch: build a D-pad menu right in the pause box — RESUME plus focusable
+            // sound/vibration toggles. keyDown stops consuming the D-pad while paused (see
+            // Gdx3DGame), so the remote navigates these; OK activates whichever is focused.
+            val resumeBtn = pillButton("RESUME", true) { resumeGame() }
+            box.addView(resumeBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(22f)
+            })
+            val row = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                clipChildren = false
+            }
+            val size = dp(52f)
+            row.addView(makeToggle(
+                R.drawable.ic_sound_on, R.drawable.ic_sound_off, activity.getString(R.string.cd_sound),
+                { Settings.soundEnabled }, { Settings.setSoundEnabled(it) }, focusable = true,
+            ), LinearLayout.LayoutParams(size, size))
+            row.addView(makeToggle(
+                R.drawable.ic_haptic_on, R.drawable.ic_haptic_off, activity.getString(R.string.cd_haptics),
+                { Settings.hapticsEnabled }, { Settings.setHapticsEnabled(it) }, focusable = true,
+            ), LinearLayout.LayoutParams(size, size).apply { leftMargin = dp(20f) })
+            box.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(20f)
+            })
+            // Land D-pad focus on RESUME (no-op on a phone in touch mode).
+            resumeBtn.post { resumeBtn.requestFocus() }
+        } else {
+            // Phone: tap the scrim to resume; the bottom-left touch chips fade in above it.
+            showToggles()
+        }
     }
 
     /** Begin resuming: dismiss the scrim, run the "2 1" countdown, then unfreeze. */
     fun resumeGame() {
         if (!paused || resuming) return
         resuming = true
-        pauseScrim?.let { s ->
-            s.isClickable = false
-            s.animate().alpha(0f).setDuration(160).withEndAction { removeView(s) }.start()
-        }
-        pauseScrim = null
         if (runBegun) hideToggles()   // a mid-run pause fades them out again; pre-run keeps them
-        countdownText.bringToFront()
-        countdownFrom(2)
+
+        // Fade the pause scrim (its "PAUSED" label included) fully out *before* the countdown
+        // starts, so the label can never overlap the big "2 / 1" digits (which sit at the same
+        // centre). Starting the countdown in the fade's end-action keeps the two strictly ordered.
+        val startCountdown = {
+            countdownText.bringToFront()
+            countdownFrom(2)
+        }
+        val scrim = pauseScrim
+        pauseScrim = null
+        if (scrim != null) {
+            scrim.isClickable = false
+            scrim.animate().alpha(0f).setDuration(140)
+                .withEndAction { removeView(scrim); startCountdown() }.start()
+        } else {
+            startCountdown()
+        }
     }
 
     private fun countdownFrom(n: Int) {
@@ -533,14 +606,28 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
     private inner class PauseButton(context: Context) : View(context) {
         private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x59000000 }
         private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = dp(2f).toFloat(); color = Color.WHITE
+        }
         private val r = RectF()
+
+        /** True while D-pad-focused on TV; draws a white ring so the remote user sees it. */
+        var focused = false
+            set(value) { if (field != value) { field = value; invalidate() } }
 
         override fun onDraw(canvas: Canvas) {
             val w = width.toFloat()
             val h = height.toFloat()
-            r.set(0f, 0f, w, h)
             val rad = dp(13f).toFloat()
-            canvas.drawRoundRect(r, rad, rad, bgPaint)
+            if (focused) {
+                val inset = ringPaint.strokeWidth / 2f
+                r.set(inset, inset, w - inset, h - inset)
+                canvas.drawRoundRect(r, rad, rad, bgPaint)
+                canvas.drawRoundRect(r, rad, rad, ringPaint)
+            } else {
+                r.set(0f, 0f, w, h)
+                canvas.drawRoundRect(r, rad, rad, bgPaint)
+            }
 
             val barW = dp(5f).toFloat()
             val barH = h * 0.40f

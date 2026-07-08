@@ -60,8 +60,10 @@ class GameActivity : AndroidApplication() {
 
     /**
      * TV remote / gamepad system keys. Directional + select keys fall through to libGDX
-     * (gameplay) or, on game-over, to the focused HUD buttons. Here we only intercept
-     * play/pause-style keys to toggle pause, and select-to-resume while paused.
+     * (gameplay) or, on game-over / while paused, to the focused HUD buttons. Here we only
+     * intercept the dedicated play/pause-style keys to toggle pause from anywhere — select
+     * (OK) is deliberately NOT intercepted while paused so it activates whichever pause-menu
+     * control (RESUME / sound / vibration) currently has D-pad focus.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -70,8 +72,6 @@ class GameActivity : AndroidApplication() {
                 KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                     chrome.togglePause(); return true
                 }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A ->
-                    if (chrome.isPausedNow()) { chrome.resumeGame(); return true }
             }
         }
         return super.dispatchKeyEvent(event)
