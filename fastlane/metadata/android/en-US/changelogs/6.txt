@@ -1,0 +1,5 @@
+- Android TV / Google TV: the pause menu is now fully usable with a D-pad or remote
+- Turn sound and vibration on or off from the pause menu on TV
+- Pause on TV with the remote's play/pause or menu button
+- Fixed the game-over button outline being clipped on the sides
+- Smoother pause-to-resume transition
