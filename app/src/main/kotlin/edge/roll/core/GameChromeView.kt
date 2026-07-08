@@ -4,7 +4,9 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -19,8 +21,10 @@ import android.view.WindowInsets
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import edge.roll.R
 
 /**
  * The game's HUD overlay: score + best at the top, animated center banners,
@@ -72,19 +76,15 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         setOnClickListener { pauseGame() }
     }
 
-    private val versionText = TextView(activity).apply {
-        textSize = 11f
-        setTextColor(Palette.withAlpha(Color.WHITE, 90))   // deliberately dim
-        typeface = Typeface.DEFAULT_BOLD
-        text = appVersionLabel()
-    }
-
     private val countdownText = TextView(activity).apply {
         textSize = 96f
         setTextColor(Color.WHITE)
         typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
         gravity = Gravity.CENTER
         setShadowLayer(dp(10f).toFloat(), 0f, dp(3f).toFloat(), 0xC0000000.toInt())
+        // The drop shadow (blur 10dp, offset 3dp down) spills below the glyph; without padding the
+        // WRAP_CONTENT bounds clip it and the shadow looks cut off under the digit. Give it room.
+        setPadding(dp(12f), dp(14f), dp(12f), dp(20f))
         alpha = 0f
     }
 
@@ -98,6 +98,61 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
     private var bestPulse: ValueAnimator? = null
     private val topBox = LinearLayout(activity)
+
+    private var runBegun = false   // set once the first move hides the pre-run options
+
+    /**
+     * A round, icon-only toggle (translucent black fill, accent ring). Reflects [isOn];
+     * tapping flips it, confirms with sound + haptic honouring the *new* state (muting is
+     * silent, un-muting isn't), then repaints. Touch-only: never takes D-pad focus.
+     */
+    private fun makeToggle(
+        iconOn: Int,
+        iconOff: Int,
+        label: String,
+        isOn: () -> Boolean,
+        set: (Boolean) -> Unit,
+    ): ImageView = ImageView(activity).apply {
+        val pad = dp(11f)
+        setPadding(pad, pad, pad, pad)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        isClickable = true
+        isFocusable = false
+        fun paint() {
+            val on = isOn()
+            setImageResource(if (on) iconOn else iconOff)
+            imageTintList = ColorStateList.valueOf(if (on) accent else Palette.withAlpha(Color.WHITE, 110))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Palette.withAlpha(Color.BLACK, 115))
+                setStroke(dp(1f), Palette.withAlpha(if (on) accent else Color.WHITE, if (on) 150 else 60))
+            }
+            contentDescription = "$label ${if (on) "on" else "off"}"
+        }
+        paint()
+        setOnClickListener {
+            set(!isOn())
+            SoundFx.play("tap"); Haptics.tick()
+            paint()
+        }
+    }
+
+    private val soundBtn = makeToggle(
+        R.drawable.ic_sound_on, R.drawable.ic_sound_off, activity.getString(R.string.cd_sound),
+        { Settings.soundEnabled }, { Settings.setSoundEnabled(it) },
+    )
+    private val hapticBtn = makeToggle(
+        R.drawable.ic_haptic_on, R.drawable.ic_haptic_off, activity.getString(R.string.cd_haptics),
+        { Settings.hapticsEnabled }, { Settings.setHapticsEnabled(it) },
+    )
+    private val toggleBox = LinearLayout(activity).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        alpha = 0f   // fades in at launch (see init) and when paused
+        val size = dp(46f)
+        addView(soundBtn, LinearLayout.LayoutParams(size, size))
+        addView(hapticBtn, LinearLayout.LayoutParams(size, size).apply { leftMargin = dp(12f) })
+    }
 
     init {
         isClickable = false
@@ -115,44 +170,55 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         addView(bannerText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
         })
-        addView(pauseBtn, LayoutParams(dp(46f), dp(46f)).apply {
+        addView(pauseBtn, LayoutParams(dp(41.4f), dp(41.4f)).apply {   // 10% smaller than 46dp
             gravity = Gravity.TOP or Gravity.START
-            topMargin = dp(16f); leftMargin = dp(16f)
-        })
-        addView(versionText, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            bottomMargin = dp(12f); leftMargin = dp(16f)
+            topMargin = dp(16f); leftMargin = dp(16f)                  // equidistant from top & left edges
         })
         addView(countdownText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
         })
+        // Sound + vibration toggles, bottom-left. Shown only pre-run and while paused
+        // (see hideOptions / pauseGame / resumeGame); hidden during an active run.
+        addView(toggleBox, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            leftMargin = dp(20f); bottomMargin = dp(28f)
+        })
+        post { showToggles() }   // fade the option chips in at launch
 
-        if (isTv) pauseBtn.visibility = GONE   // TV pauses via the remote (play/pause / menu)
+        // Hidden until the run actually begins (shown by hideOptions); TV never shows it
+        // at all — pause there is via the remote (play/pause / menu).
+        pauseBtn.visibility = GONE
 
-        // Keep the HUD clear of the status bar / navigation bar / display cutout.
+        // Keep the HUD clear of the status bar / cutout (top) and nav bar / cutout (bottom-left).
         setOnApplyWindowInsetsListener { _, insets ->
-            val (top, left, bottom) = if (Build.VERSION.SDK_INT >= 30) {
-                val i = insets.getInsets(
-                    WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars() or
-                        WindowInsets.Type.displayCutout(),
-                )
-                Triple(i.top, i.left, i.bottom)
+            val top: Int
+            val left: Int
+            val bottom: Int
+            if (Build.VERSION.SDK_INT >= 30) {
+                top = insets.getInsets(WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout()).top
+                val nav = insets.getInsets(WindowInsets.Type.navigationBars() or WindowInsets.Type.displayCutout())
+                left = nav.left; bottom = nav.bottom
             } else {
-                @Suppress("DEPRECATION")
-                Triple(insets.systemWindowInsetTop, insets.systemWindowInsetLeft, insets.systemWindowInsetBottom)
+                @Suppress("DEPRECATION") top = insets.systemWindowInsetTop
+                @Suppress("DEPRECATION") left = insets.systemWindowInsetLeft
+                @Suppress("DEPRECATION") bottom = insets.systemWindowInsetBottom
             }
             (topBox.layoutParams as LayoutParams).topMargin = maxOf(dp(48f), top + dp(10f))
             (pauseBtn.layoutParams as LayoutParams).apply {
-                topMargin = maxOf(dp(16f), top + dp(10f))
-                leftMargin = maxOf(dp(16f), left + dp(12f))
+                // Equidistant from the top and left edges (a square corner inset). The top uses
+                // the same value as the left rather than the status-bar/cutout inset, so the chip
+                // hugs the corner instead of dropping below a (centred) notch.
+                val gap = maxOf(dp(16f), left + dp(12f))
+                topMargin = gap
+                leftMargin = gap
             }
-            (versionText.layoutParams as LayoutParams).apply {
-                bottomMargin = maxOf(dp(12f), bottom + dp(8f))
-                leftMargin = maxOf(dp(16f), left + dp(12f))
+            (toggleBox.layoutParams as LayoutParams).apply {
+                leftMargin = dp(20f) + left
+                bottomMargin = dp(28f) + bottom
             }
             topBox.requestLayout()
             pauseBtn.requestLayout()
-            versionText.requestLayout()
+            toggleBox.requestLayout()
             insets
         }
     }
@@ -166,6 +232,38 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
     fun setBest(best: Int) {
         bestText.text = if (best > 0) "BEST $best" else ""
+    }
+
+    /** Fade the pause chip in (used when a run begins and after a resume). No-op on TV. */
+    private fun revealPause() {
+        if (isTv) return
+        pauseBtn.animate().cancel()
+        pauseBtn.alpha = 0f
+        pauseBtn.visibility = VISIBLE
+        pauseBtn.animate().alpha(1f).setDuration(220).start()
+    }
+
+    /** Fade the sound / vibration / slow-mo chips in (launch and while paused). */
+    private fun showToggles() {
+        toggleBox.animate().cancel()
+        toggleBox.alpha = 0f
+        toggleBox.visibility = VISIBLE
+        toggleBox.bringToFront()
+        toggleBox.animate().alpha(1f).setDuration(220).start()
+    }
+
+    /** Fade the sound / vibration / slow-mo chips out (run start and on resume). */
+    private fun hideToggles() {
+        toggleBox.animate().cancel()
+        toggleBox.animate().alpha(0f).setDuration(220)
+            .withEndAction { toggleBox.visibility = GONE }.start()
+    }
+
+    /** Fade out the pre-run option chips once a run has actually begun; reveal the pause chip. */
+    fun hideOptions() {
+        runBegun = true
+        revealPause()   // pause is only offered during an active run — fade it in
+        if (toggleBox.visibility == VISIBLE) hideToggles()
     }
 
     fun setScore(v: Int) {
@@ -306,12 +404,16 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
 
         // finish + relaunch (NOT recreate): libGDX only disposes GL resources when
         // the activity is truly finishing, so recreate() would leak native meshes.
+        // The relaunch must stay INSIDE the current task: a fresh intent (never a
+        // copy of activity.intent, whose launcher FLAG_ACTIVITY_NEW_TASK would spawn
+        // a new task) started BEFORE finish() (so the task never empties). A
+        // task-to-task swap always plays the OEM's default slide on Android 12+ —
+        // apps cannot suppress task transitions — whereas an in-task activity open
+        // honours the theme's animations: RunSwapAnim (themes.xml) crossfades the
+        // fresh run over the game-over screen instead of sliding it in.
         val restartBtn = button("RESTART", true) {
-            val relaunch = activity.intent
+            activity.startActivity(Intent(activity, activity.javaClass))
             activity.finish()
-            @Suppress("DEPRECATION") activity.overridePendingTransition(0, 0)
-            activity.startActivity(relaunch)
-            @Suppress("DEPRECATION") activity.overridePendingTransition(0, 0)
         }
         card.addView(restartBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         card.addView(button("EXIT", false) { activity.finish() },
@@ -373,6 +475,8 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         })
         pauseScrim = scrim
         addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // Option chips are reachable while paused too — fade them in above the scrim.
+        showToggles()
     }
 
     /** Begin resuming: dismiss the scrim, run the "2 1" countdown, then unfreeze. */
@@ -384,6 +488,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             s.animate().alpha(0f).setDuration(160).withEndAction { removeView(s) }.start()
         }
         pauseScrim = null
+        if (runBegun) hideToggles()   // a mid-run pause fades them out again; pre-run keeps them
         countdownText.bringToFront()
         countdownFrom(2)
     }
@@ -407,7 +512,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         countdownText.alpha = 0f
         paused = false
         resuming = false
-        if (!isTv) pauseBtn.visibility = VISIBLE
+        revealPause()
         onPauseStateChanged?.invoke(false)
     }
 
@@ -421,14 +526,6 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             paused -> resumeGame()
             else -> pauseGame()
         }
-    }
-
-    private fun appVersionLabel(): String = try {
-        @Suppress("DEPRECATION")
-        val name = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName
-        if (name.isNullOrBlank()) "" else "v$name"
-    } catch (e: Exception) {
-        ""
     }
 
     /** Top-left pause glyph (two bars) drawn in code on a translucent rounded chip. */

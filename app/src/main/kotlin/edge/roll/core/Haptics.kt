@@ -36,10 +36,12 @@ object Haptics {
     fun fail() = waveform(longArrayOf(0, 70, 60, 140), intArrayOf(0, 120, 0, 230))
 
     fun buzz(ms: Int, amp: Int = 200) {
+        if (!Settings.hapticsEnabled) return
         runCatching { vib?.vibrate(VibrationEffect.createOneShot(ms.toLong().coerceAtLeast(1), amp.coerceIn(1, 255))) }
     }
 
     private fun predefined(kind: Int, fbMs: Int, fbAmp: Int) {
+        if (!Settings.hapticsEnabled) return
         if (Build.VERSION.SDK_INT >= 29) {
             val effect = when (kind) {
                 0 -> VibrationEffect.EFFECT_TICK
@@ -53,6 +55,7 @@ object Haptics {
     }
 
     private fun waveform(times: LongArray, amps: IntArray) {
+        if (!Settings.hapticsEnabled) return
         runCatching { vib?.vibrate(VibrationEffect.createWaveform(times, amps, -1)) }
     }
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exiting half of the restart crossfade: keeps the old window fully opaque
+     (and alive) underneath while the new one fades in. Duration must match
+     run_fade_in, or the old window is removed mid-fade and the new run would
+     blend with black instead of the previous frame. -->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fromAlpha="1.0"
+    android:toAlpha="1.0"
+    android:duration="220"/>

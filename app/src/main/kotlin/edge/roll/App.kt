@@ -3,12 +3,14 @@ package edge.roll
 import android.app.Application
 import edge.roll.core.Haptics
 import edge.roll.core.Scores
+import edge.roll.core.Settings
 import edge.roll.core.SoundFx
 
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
         Scores.init(this)
+        Settings.init(this)
         // Renderer benchmarks (adb: `setprop debug.edgeroll.bench 1`) skip audio/haptics
         // so the background DSP synth thread doesn't contend for CPU and pollute the
         // frame-time measurement. No effect on normal play.

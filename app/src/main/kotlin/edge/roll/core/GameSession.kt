@@ -19,6 +19,9 @@ interface GameSession {
     /** Flashes a big animated message in the center of the screen ("PERFECT!", "COMBO x5"). */
     fun banner(text: String)
 
+    /** Called once when a run actually begins (first move), e.g. to hide the pre-run options. */
+    fun runStarted() {}
+
     /**
      * Ends the run: saves the high score, plays success/fail sound + haptic,
      * and shows the shared game-over card with RESTART / EXIT.

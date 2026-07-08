@@ -42,7 +42,9 @@ class GameActivity : AndroidApplication() {
             useCompass = false
             numSamples = 2
             r = 8; g = 8; b = 8; a = 8
-            depth = 16
+            // 24-bit depth: 16-bit can't separate the die-pips from the cube face once the cube
+            // is far down the abyss (they z-fight/flicker); 24-bit resolves them cleanly.
+            depth = 24
         }
         val gameView = initializeForView(game, config)
         // The GL surface holds D-pad/remote focus during play so key events reach libGDX;

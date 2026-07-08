@@ -1,0 +1,15 @@
+<!-- Vibration off: phone (no waves) with a diagonal slash. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.5,3h-9C6.67,3 6,3.67 6,4.5v15C6,20.33 6.67,21 7.5,21h9c0.83,0 1.5,-0.67 1.5,-1.5v-15C18,3.67 17.33,3 16.5,3zM16,19H8V5h8V19z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M4,3.5 L20,20.5" />
+</vector>

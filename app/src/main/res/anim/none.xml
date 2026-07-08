@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Zero-length no-op animation. Window animation attributes need a real
+     animation resource: @null resolves to resource id 0, which the framework
+     reads as "unspecified" and replaces with its DEFAULT transition. -->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fromAlpha="1.0"
+    android:toAlpha="1.0"
+    android:duration="0"/>

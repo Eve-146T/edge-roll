@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Edge Roll</string>
+    <string name="cd_sound">Sound</string>
+    <string name="cd_haptics">Vibration</string>
 </resources>

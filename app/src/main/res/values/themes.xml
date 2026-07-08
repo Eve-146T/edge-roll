@@ -3,5 +3,23 @@
     <style name="GameTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <!-- RESTART relaunches this activity in-task (start + finish, see
+             GameChromeView) to let libGDX free its native GL resources. The open
+             animations turn that swap into a quick crossfade — new run fades in,
+             old frame holds underneath — instead of the OEM's slide or a harsh
+             one-frame cut. All anims must be real resources, not @null: resource
+             id 0 means "unspecified", and the system substitutes its default
+             transition. (Task* animations are left alone — the system ignores app
+             values for task transitions on Android 12+ anyway, and entering/
+             leaving the app may animate normally.) -->
+        <item name="android:windowAnimationStyle">@style/RunSwapAnim</item>
+    </style>
+
+    <!-- In-app activity transitions: restart crossfade, instant-cut closes. -->
+    <style name="RunSwapAnim">
+        <item name="android:activityOpenEnterAnimation">@anim/run_fade_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/run_hold</item>
+        <item name="android:activityCloseEnterAnimation">@anim/none</item>
+        <item name="android:activityCloseExitAnimation">@anim/none</item>
     </style>
 </resources>

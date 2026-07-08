@@ -61,6 +61,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     private var cubeGx = 0
     private var cubeGz = 0
     private var rolling = false
+    private var rollFatal = false           // this roll goes into the void → tumble straight into the fall
     private var rollT = 0f
     private var rollDur = 0.15f
     private var dirX = 0
@@ -76,6 +77,8 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     private var dwell = 0f                  // time idling on current tile
     private var dwellWarned = false
     private var dying = false
+    private var deathPending = false        // cube is falling; game-over punctuation still to come
+    private var deathT = 0f                 // seconds since the cube fell off (see DEATH_DELAY)
     private val deadPos = Vector3(); private val deadVel = Vector3()
     private val deadAxis = Vector3(1f, 0f, 0f)
     private var deadRot = 0f; private var deadSpin = 0f
@@ -237,11 +240,16 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     private fun startRoll(dx: Int, dz: Int) {
-        started = true
+        if (!started) { started = true; session.runStarted() }   // first move: hide pre-run options
         rolling = true
         rollT = 0f
         dirX = dx; dirZ = dz
         axis.set(dz.toFloat(), 0f, -dx.toFloat())
+        // A roll toward a missing / already-falling tile is fatal: roll it LINEARLY (no easeOut
+        // deceleration) so its angular speed at 90° carries straight into the fall — the tumble
+        // over the edge and the drop read as one continuous motion (see finishRoll / updateCube).
+        val dest = map[key(cubeGx + dx, cubeGz + dz)]
+        rollFatal = dest == null || dest.state == FALLING
         // leaving the tile arms its crumble timer
         map[key(cubeGx, cubeGz)]?.let {
             if (it.state == ALIVE) { it.state = CRUMBLE; it.total = crumbleTime(); it.timer = it.total }
@@ -259,8 +267,13 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         orient.mulLeft(tmpQ).nor()
         val t = map[key(cubeGx, cubeGz)]
         if (t == null || t.state == FALLING) {
-            // rolled over the edge / onto a missing tile: topple into the abyss
-            die(dirX * 2.4f, 1.3f, dirZ * 2.4f, axis, 330f)
+            // Rolled over the edge. Hand the roll's angular + linear velocity straight to the fall
+            // so the two are one continuous motion — no decelerate-then-relaunch hitch at the seam.
+            val wDeg = 90f / rollDur                                  // roll's angular speed at the seam
+            val wRad = wDeg * MathUtils.degreesToRadians
+            tmpV.set(dirX * 0.5f, CUBE_Y - TILE_TOP, dirZ * 0.5f)     // cube-center offset from pivot edge
+            tmpV2.set(axis).crs(tmpV).scl(wRad)                       // tangential center velocity = ω × r
+            die(tmpV2.x, tmpV2.y, tmpV2.z, axis, wDeg)
             return
         }
         squash = 1f
@@ -296,19 +309,32 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
     }
 
     private fun die(vx: Float, vy: Float, vz: Float, ax: Vector3, spin: Float) {
+        if (dying) return
         dying = true
+        deathPending = true
+        deathT = 0f
         hasQueued = false
-        deadPos.set(cubeGx.toFloat(), CUBE_Y, cubeGz.toFloat())
+        cubeInst.transform.getTranslation(deadPos)   // start the fall from the exact current center
         deadVel.set(vx, vy, vz)
         deadAxis.set(ax)
         if (deadAxis.len2() < 0.001f) deadAxis.set(1f, 0f, 0f)
         deadSpin = spin
         deadRot = 0f
+        // The cube tips over and keeps falling from here, kicking up debris. The heavy death
+        // punctuation (boom + shake + red flash + game-over card) is held back DEATH_DELAY
+        // seconds by tick()/triggerDeath so you get to watch the cube drop into the abyss.
+        SoundFx.play("whoosh", rate = 0.55f, vol = 0.4f)
+        Haptics.tick()
+        burst3d(Vector3(deadPos), Color(1f, 0.45f, 0.3f, 1f), n = 20, speed = 6f, size = 0.13f, life = 1f)
+    }
+
+    /** After [DEATH_DELAY] of watching the cube fall, deliver the impact + game-over card. */
+    private fun triggerDeath() {
+        deathPending = false
         SoundFx.play("boom")
         Haptics.heavy()
         shake(0.7f)
         flash(Color.RED, 0.28f)
-        burst3d(Vector3(deadPos), Color(1f, 0.45f, 0.3f, 1f), n = 20, speed = 6f, size = 0.13f, life = 1f)
         session.gameOver()
     }
 
@@ -331,6 +357,10 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
 
     override fun tick(dt: Float) {
         if (benchmark) { benchTick(dt); return }
+        if (dying && deathPending && !session.isPaused) {   // watch the cube fall, then punctuate
+            deathT += dt
+            if (deathT >= DEATH_DELAY) triggerDeath()
+        }
         if (!session.isOver && !session.isPaused) {
             if (rolling) {
                 rollT += dt / rollDur
@@ -362,7 +392,9 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
             cubeInst.transform.setToTranslation(deadPos).rotate(deadAxis, deadRot).rotate(orient)
         } else if (rolling) {
             val t = min(1f, rollT)
-            val ang = 90f * (1f - (1f - t) * (1f - t)) // easeOutQuad: snappy launch, firm landing
+            // Normal roll eases out for a firm landing; a fatal roll stays linear so its angular
+            // speed at the edge matches the fall it hands off to (no hitch — see finishRoll).
+            val ang = if (rollFatal) 90f * t else 90f * (1f - (1f - t) * (1f - t))
             cubeInst.transform
                 .setToTranslation(cubeGx + dirX * 0.5f, TILE_TOP, cubeGz + dirZ * 0.5f) // pivot edge
                 .rotate(axis, ang)
@@ -472,7 +504,10 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
             if (t.gem && t.gemInst != null) { batch.render(t.gemInst, env); drawn++ }
         }
         if (!noBatch && tileBatch.count() > 0) { tileBatch.flush(batch, env); drawn++ }  // every opaque tile: 1 call
-        if (!dying || deadPos.y > -50f) {
+        // Keep drawing the falling cube until it reaches its rest depth (-70, where updateCube
+        // stops it) so it stays on-screen right up to the game-over card instead of blinking out
+        // early into empty abyss.
+        if (!dying || deadPos.y > -72f) {
             batch.render(cubeInst, env)
             batch.render(studTop, env)
             batch.render(studFront, env)
@@ -534,6 +569,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         const val TILE_CULL_R = 0.9f   // bounding-sphere radius for frustum culling a tile
         const val RENDER_AHEAD = 28    // tiles generated/visible ahead of the cube (was 16)
         const val SPAWN_DUR = 0.34f    // seconds for a freshly generated tile to grow in
+        const val DEATH_DELAY = 2f     // seconds to watch the cube fall before the game-over card
         const val ALIVE = 0; const val CRUMBLE = 1; const val FALLING = 2
         const val CUBE_Y = 0.6f    // resting cube center height
         const val TILE_TOP = 0.13f // tile top surface / tumble pivot height

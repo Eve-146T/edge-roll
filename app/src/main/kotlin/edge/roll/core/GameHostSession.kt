@@ -41,6 +41,10 @@ class GameHostSession(
         ui { chrome.banner(text) }
     }
 
+    override fun runStarted() {
+        ui { chrome.hideOptions() }
+    }
+
     override fun gameOver() {
         if (!over.compareAndSet(false, true)) return
         val finalScore = scoreV.get()

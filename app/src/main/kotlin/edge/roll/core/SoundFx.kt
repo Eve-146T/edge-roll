@@ -54,7 +54,7 @@ object SoundFx {
     }
 
     fun play(name: String, rate: Float = 1f, vol: Float = 1f) {
-        if (!ready) return
+        if (!ready || !Settings.soundEnabled) return
         val id = ids[name] ?: return
         val v = vol.coerceIn(0f, 1f)
         pool?.play(id, v, v, 1, 0, rate.coerceIn(0.5f, 2f))
