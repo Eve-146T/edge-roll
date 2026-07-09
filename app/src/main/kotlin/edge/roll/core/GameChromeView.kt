@@ -76,12 +76,13 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         // way the dedicated remote pause/menu key (see GameActivity) also pauses.
         isFocusable = isTv
         isFocusableInTouchMode = false
+        // Same as the toggles: no default square focus highlight — the chip draws its own ring.
+        defaultFocusHighlightEnabled = false
         contentDescription = "Pause"
         setOnClickListener { pauseGame() }
-        setOnFocusChangeListener { v, has ->
-            v.animate().scaleX(if (has) 1.12f else 1f).scaleY(if (has) 1.12f else 1f).setDuration(120).start()
-            (v as PauseButton).focused = has
-        }
+        // Focus cue is the ring only, no scale: the chip hugs the top-left corner, so growing it
+        // would push the ring past the screen edge (and get cropped harder on TVs with overscan).
+        setOnFocusChangeListener { v, has -> (v as PauseButton).focused = has }
     }
 
     private val countdownText = TextView(activity).apply {
@@ -130,6 +131,10 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         isClickable = true
         isFocusable = focusable
         isFocusableInTouchMode = false
+        // Suppress Android's default (rectangular) focus highlight: the round background has no
+        // focus state, so the system otherwise draws a square behind the focused toggle on top of
+        // our own white ring. Our ring is the only focus cue we want.
+        defaultFocusHighlightEnabled = false
         fun paint() {
             val on = isOn()
             val hasFocus = isFocused
@@ -521,6 +526,12 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
                 clipChildren = false
+                clipToPadding = false
+                // A focused toggle grows to 1.12x; its white ring spills ~3dp past the toggle on
+                // every side. This padding gives that ring room inside the row so it isn't clipped
+                // flat where the row (and the pause box) end — the bug a TV tester caught.
+                val ring = dp(8f)
+                setPadding(ring, ring, ring, ring)
             }
             val size = dp(52f)
             row.addView(makeToggle(
@@ -532,7 +543,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
                 { Settings.hapticsEnabled }, { Settings.setHapticsEnabled(it) }, focusable = true,
             ), LinearLayout.LayoutParams(size, size).apply { leftMargin = dp(20f) })
             box.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(20f)
+                topMargin = dp(12f)
             })
             // Land D-pad focus on RESUME (no-op on a phone in touch mode).
             resumeBtn.post { resumeBtn.requestFocus() }
