@@ -1,0 +1,4 @@
+- Google TV / Android TV: pause with the remote's OK / select button, and navigate the pause menu with the D-pad
+- Fixed the resume countdown numbers being cut off at the bottom
+- Cleaner selected-button outlines on the pause and game-over screens
+- Smoother pause-to-resume
