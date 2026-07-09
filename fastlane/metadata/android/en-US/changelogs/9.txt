@@ -1,0 +1,5 @@
+- Android TV / Google TV: pause with the remote's OK / select button (or play/pause / menu)
+- Selected buttons now show a clean ring — fixes clipped outlines and a stray square highlight
+- Fixed the resume countdown numbers being cut off at the bottom
+- Fully D-pad-navigable pause menu (Resume, sound, vibration)
+- Game-over button outline no longer clipped on the sides
