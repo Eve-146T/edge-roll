@@ -144,7 +144,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
                 shape = GradientDrawable.OVAL
                 setColor(Palette.withAlpha(Color.BLACK, 115))
                 when {
-                    hasFocus -> setStroke(dp(2f), Color.WHITE)
+                    hasFocus -> setStroke(dp(3f), Color.WHITE)   // focus cue = a bright ring, no scale
                     on -> setStroke(dp(1f), Palette.withAlpha(accent, 150))
                     else -> setStroke(dp(1f), Palette.withAlpha(Color.WHITE, 60))
                 }
@@ -157,10 +157,9 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             SoundFx.play("tap"); Haptics.tick()
             paint()
         }
-        if (focusable) setOnFocusChangeListener { v, has ->
-            paint()
-            v.animate().scaleX(if (has) 1.12f else 1f).scaleY(if (has) 1.12f else 1f).setDuration(120).start()
-        }
+        // Focus is shown by the ring only (paint() repaints it) — deliberately no grow-on-focus
+        // scale, so the ring can never spill past the view and get clipped by a parent.
+        if (focusable) setOnFocusChangeListener { _, _ -> paint() }
     }
 
     private val soundBtn = makeToggle(
@@ -200,9 +199,10 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             gravity = Gravity.TOP or Gravity.START
             topMargin = dp(16f); leftMargin = dp(16f)                  // equidistant from top & left edges
         })
-        addView(countdownText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.CENTER
-        })
+        // Full-screen box (not WRAP_CONTENT): the digit animates from 1.7x, and a wrap-content box
+        // would clip the scaled glyph to its own bounds — cutting off the bottom of the "2 / 1".
+        // The TextView's own gravity=CENTER keeps the digit centred on screen.
+        addView(countdownText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // Sound + vibration toggles, bottom-left. Shown only pre-run and while paused
         // (see hideOptions / pauseGame / resumeGame); hidden during an active run.
         // These are the touch-only phone chips; on TV they're never shown here (a D-pad
@@ -353,12 +353,12 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             normal = roundedBg(Color.TRANSPARENT, Palette.withAlpha(Color.WHITE, 140), 2)
             focused = roundedBg(Palette.withAlpha(Color.WHITE, 40), Color.WHITE, 3)
         }
+        // Focus cue is the ring only (the focused StateListDrawable state), no grow-on-focus scale —
+        // a scaled button spills past its box and gets clipped by a parent. The ring is inset in the
+        // button's bounds, so it can never be clipped no matter how the button is nested.
         background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
             addState(intArrayOf(), normal)
-        }
-        setOnFocusChangeListener { v, has ->
-            v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(120).start()
         }
         setOnClickListener {
             SoundFx.play("tap"); Haptics.click()
@@ -383,10 +383,6 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(28f), dp(26f), dp(28f), dp(24f))
-            // A focused button scales up 1.06x; without this the extra width spills into the
-            // card's padding and gets clipped, so the focus ring looks cut off at the sides.
-            clipToPadding = false
-            clipChildren = false
             background = GradientDrawable().apply {
                 cornerRadius = dp(24f).toFloat()
                 setColor(0xFF1E1840.toInt())
@@ -489,8 +485,6 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
         val box = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            clipChildren = false   // focused controls scale up; don't clip their rings
-            clipToPadding = false
         }
         box.addView(TextView(activity).apply {
             text = "PAUSED"
@@ -525,13 +519,6 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
             val row = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                clipChildren = false
-                clipToPadding = false
-                // A focused toggle grows to 1.12x; its white ring spills ~3dp past the toggle on
-                // every side. This padding gives that ring room inside the row so it isn't clipped
-                // flat where the row (and the pause box) end — the bug a TV tester caught.
-                val ring = dp(8f)
-                setPadding(ring, ring, ring, ring)
             }
             val size = dp(52f)
             row.addView(makeToggle(
@@ -543,7 +530,7 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
                 { Settings.hapticsEnabled }, { Settings.setHapticsEnabled(it) }, focusable = true,
             ), LinearLayout.LayoutParams(size, size).apply { leftMargin = dp(20f) })
             box.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(12f)
+                topMargin = dp(20f)
             })
             // Land D-pad focus on RESUME (no-op on a phone in touch mode).
             resumeBtn.post { resumeBtn.requestFocus() }
