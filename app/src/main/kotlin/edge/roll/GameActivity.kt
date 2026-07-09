@@ -1,5 +1,6 @@
 package edge.roll
 
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -15,6 +16,7 @@ import edge.roll.game.EdgeRoll
 class GameActivity : AndroidApplication() {
 
     private lateinit var chrome: GameChromeView
+    private val isTv by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,10 +62,14 @@ class GameActivity : AndroidApplication() {
 
     /**
      * TV remote / gamepad system keys. Directional + select keys fall through to libGDX
-     * (gameplay) or, on game-over / while paused, to the focused HUD buttons. Here we only
-     * intercept the dedicated play/pause-style keys to toggle pause from anywhere — select
-     * (OK) is deliberately NOT intercepted while paused so it activates whichever pause-menu
-     * control (RESUME / sound / vibration) currently has D-pad focus.
+     * (gameplay) or, on game-over / while paused, to the focused HUD buttons.
+     *
+     * - Dedicated play/pause-style keys always toggle pause.
+     * - On TV, OK / select (center) also pauses *during an active run* — many remotes (e.g. TCL)
+     *   have no play/pause key, and the center button is redundant for movement (the D-pad's four
+     *   arrows cover it). `pauseFromSelect` only consumes the press mid-run; pre-run it falls
+     *   through so OK starts the run, and while paused / on game-over it falls through so OK
+     *   activates the focused HUD control (RESUME / a toggle / RESTART / EXIT).
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -72,6 +78,8 @@ class GameActivity : AndroidApplication() {
                 KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                     chrome.togglePause(); return true
                 }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A ->
+                    if (isTv && chrome.pauseFromSelect()) return true
             }
         }
         return super.dispatchKeyEvent(event)

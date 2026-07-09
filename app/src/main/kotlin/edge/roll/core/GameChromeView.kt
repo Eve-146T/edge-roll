@@ -592,6 +592,18 @@ class GameChromeView(private val activity: Activity, private val accent: Int) : 
     /** True while the run is paused (read by GameActivity for remote select-to-resume). */
     fun isPausedNow() = paused
 
+    /**
+     * OK / select on a TV remote pauses — but only during an active run. Returns true when it
+     * consumed the press. Pre-run it returns false so OK still starts the run (rolls forward);
+     * while paused / resuming / on game-over it returns false so OK reaches the focused HUD
+     * control (RESUME, a toggle, RESTART/EXIT). Lets any remote pause even without a play/pause key.
+     */
+    fun pauseFromSelect(): Boolean {
+        if (!runBegun || paused || resuming || overCard != null) return false
+        pauseGame()
+        return true
+    }
+
     /** Toggle pause from a TV remote / gamepad system key. No-op after game over. */
     fun togglePause() {
         when {

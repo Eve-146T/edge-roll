@@ -1,0 +1,4 @@
+- Android TV / Google TV: pause with the remote's OK / select button (or play/pause / menu)
+- Fully D-pad-navigable pause menu (Resume + Sound)
+- Fixed the game-over button outline being clipped on the sides
+- Smoother pause-to-resume transition
