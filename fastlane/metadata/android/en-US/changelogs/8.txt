@@ -1,0 +1,5 @@
+- Android TV / Google TV: pause with the remote's OK / select button (or play/pause / menu)
+- Fixed pause-menu focus outlines: no clipped ring, no stray square highlight
+- Fully D-pad-navigable pause menu (Resume, sound, vibration)
+- Game-over button outline no longer clipped on the sides
+- Smoother pause-to-resume transition

@@ -27,8 +27,8 @@ android {
         applicationId = "edge.roll"
         minSdk = 28          // Android 9 (Pie) and up
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.1.1-beta2"
+        versionCode = 8
+        versionName = "1.1.1-beta3"
     }
 
     // Keep release APKs free of Google's dependency-metadata signing block,
