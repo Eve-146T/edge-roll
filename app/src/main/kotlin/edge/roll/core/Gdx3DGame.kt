@@ -6,7 +6,9 @@ import com.badlogic.gdx.Input.Keys
 import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
+import com.badlogic.gdx.graphics.Mesh
 import com.badlogic.gdx.graphics.PerspectiveCamera
+import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes.Usage
 import com.badlogic.gdx.graphics.g3d.Environment
 import com.badlogic.gdx.graphics.g3d.Material
@@ -17,6 +19,7 @@ import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder
+import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
@@ -41,10 +44,25 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     lateinit var env: Environment
     private lateinit var batch: ModelBatch
     private lateinit var shapes: ShapeRenderer
+    private lateinit var skyMesh: Mesh
+    private var skyShader: ShaderProgram? = null
     val mb = ModelBuilder()
 
     var bgTop: Color = Color.valueOf("3A2A7E")
     var bgBottom: Color = Color.valueOf("120E2C")
+
+    /** Sky-gradient dither strength, in output **LSBs** (peak-to-peak). The shader
+     *  scatters each pixel by up to ±skyDither/2 of a real framebuffer colour step
+     *  ([skyLsb], measured from the actual surface), dissolving the quantization
+     *  banding into noise below the eye's threshold. ~1 LSB is the sweet spot: it
+     *  kills the bands while staying imperceptible as grain. Scaling to the *real*
+     *  bit depth is what makes this correct on an 8-bit, 10-bit, or RGB565 surface
+     *  alike (a fixed 8-bit amplitude does nothing on a coarser 565 panel). */
+    var skyDither = 1f
+
+    /** Normalized size of one colour step per channel on the actual surface
+     *  (1/(2^bits-1)); measured in [measureSurfaceDepth]. Defaults to 8-bit. */
+    private val skyLsb = floatArrayOf(1f / 255f, 1f / 255f, 1f / 255f)
 
     /** Total elapsed seconds. */
     var time = 0f
@@ -97,6 +115,7 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     // ----------------------------------------------------------------- setup
 
     override fun create() {
+        measureSurfaceDepth()
         cam = PerspectiveCamera(60f, sw.toFloat(), sh.toFloat()).apply {
             position.set(7f, 7f, 7f)
             lookAt(0f, 0f, 0f)
@@ -111,6 +130,7 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
         }
         batch = ModelBatch()
         shapes = ShapeRenderer()
+        buildSky()
 
         Gdx.input.inputProcessor = object : InputAdapter() {
             private var downX = 0f
@@ -183,6 +203,65 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
         init()
     }
 
+    /** Read the real per-channel colour depth of the framebuffer we actually got
+     *  (the EGL config chooser may hand back fewer bits than requested), and derive
+     *  the normalized size of one colour step per channel so the sky dither can be
+     *  scaled to match. Logged once — handy when a device's gradient still bands. */
+    private fun measureSurfaceDepth() {
+        val b = com.badlogic.gdx.utils.BufferUtils.newIntBuffer(1)
+        fun bits(pname: Int): Int { b.clear(); Gdx.gl.glGetIntegerv(pname, b); return b.get(0) }
+        val r = bits(GL20.GL_RED_BITS); val g = bits(GL20.GL_GREEN_BITS); val bl = bits(GL20.GL_BLUE_BITS)
+        Gdx.app.log("Gdx3DGame", "surface bits R=$r G=$g B=$bl A=${bits(GL20.GL_ALPHA_BITS)} D=${bits(GL20.GL_DEPTH_BITS)}")
+        // 1/(2^n - 1); fall back to 8-bit if a driver reports 0 (e.g. some FBO paths).
+        fun lsb(n: Int) = if (n in 1..16) 1f / ((1 shl n) - 1) else 1f / 255f
+        skyLsb[0] = lsb(r); skyLsb[1] = lsb(g); skyLsb[2] = lsb(bl)
+    }
+
+    /** Full-screen quad + shader that draws the [bgBottom]→[bgTop] gradient with
+     *  ordered dithering, so the smooth dark gradient doesn't posterize (band) when
+     *  written to the framebuffer. If the shader fails to compile we fall back to a
+     *  plain vertex-colour gradient in [render] (the `skyShader == null` path). */
+    private fun buildSky() {
+        val pos = ShaderProgram.POSITION_ATTRIBUTE
+        skyMesh = Mesh(true, 4, 0, VertexAttribute(Usage.Position, 2, pos))
+        // Clip-space quad as a triangle strip: BL, BR, TL, TR.
+        skyMesh.setVertices(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
+        val vert = """
+            attribute vec2 $pos;
+            varying float v_t;
+            void main() {
+                v_t = $pos.y * 0.5 + 0.5;
+                gl_Position = vec4($pos, 0.0, 1.0);
+            }
+        """.trimIndent()
+        val frag = """
+            #ifdef GL_ES
+            precision highp float;
+            #endif
+            varying float v_t;
+            uniform vec3 u_bottom;
+            uniform vec3 u_top;
+            uniform vec3 u_amp;      // per-channel dither amplitude (peak-to-peak, normalized)
+            // Interleaved gradient noise (Jimenez 2014): a cheap, texture-free ordered
+            // dither. It nudges each pixel by a fraction of a colour step so the hard
+            // quantization edges dissolve into noise below the eye's threshold.
+            float ign(vec2 p) {
+                return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+            }
+            void main() {
+                vec3 c = mix(u_bottom, u_top, v_t);
+                gl_FragColor = vec4(c + (ign(gl_FragCoord.xy) - 0.5) * u_amp, 1.0);
+            }
+        """.trimIndent()
+        val sh = ShaderProgram(vert, frag)
+        if (sh.isCompiled) {
+            skyShader = sh
+        } else {
+            Gdx.app.error("Gdx3DGame", "Sky dither shader failed, using vertex-colour gradient:\n${sh.log}")
+            sh.dispose()
+        }
+    }
+
     // ----------------------------------------------------------------- frame
 
     override fun render() {
@@ -199,12 +278,22 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
         Gdx.gl.glClearColor(bgBottom.r, bgBottom.g, bgBottom.b, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
-        // Gradient sky.
+        // Gradient sky — dithered in the fragment shader so the smooth dark gradient
+        // doesn't band (posterize) when quantized to the framebuffer.
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
-        shapes.projectionMatrix = uiMatrix.setToOrtho2D(0f, 0f, sw.toFloat(), sh.toFloat())
-        shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.rect(0f, 0f, sw.toFloat(), sh.toFloat(), bgBottom, bgBottom, bgTop, bgTop)
-        shapes.end()
+        val sky = skyShader
+        if (sky != null) {
+            sky.bind()
+            sky.setUniformf("u_bottom", bgBottom.r, bgBottom.g, bgBottom.b)
+            sky.setUniformf("u_top", bgTop.r, bgTop.g, bgTop.b)
+            sky.setUniformf("u_amp", skyLsb[0] * skyDither, skyLsb[1] * skyDither, skyLsb[2] * skyDither)
+            skyMesh.render(sky, GL20.GL_TRIANGLE_STRIP)
+        } else {
+            shapes.projectionMatrix = uiMatrix.setToOrtho2D(0f, 0f, sw.toFloat(), sh.toFloat())
+            shapes.begin(ShapeRenderer.ShapeType.Filled)
+            shapes.rect(0f, 0f, sw.toFloat(), sh.toFloat(), bgBottom, bgBottom, bgTop, bgTop)
+            shapes.end()
+        }
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
 
         val shaken = shakeMag > 0.005f
@@ -363,6 +452,8 @@ abstract class Gdx3DGame(val session: GameSession) : ApplicationAdapter() {
     override fun dispose() {
         batch.dispose()
         shapes.dispose()
+        if (::skyMesh.isInitialized) skyMesh.dispose()
+        skyShader?.dispose()
         owned.forEach { it.dispose() }
         owned.clear()
     }

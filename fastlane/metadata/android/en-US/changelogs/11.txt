@@ -1,0 +1,2 @@
+- Smoother background gradient — fixed the colour banding (stair-step lines) that showed in darker scenes
+- Gems now fade in with their tile instead of popping in at the edge of the view

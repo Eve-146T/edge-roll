@@ -43,6 +43,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         var vis = true                      // in view frustum this frame (set by updateTiles)
         var spawn = 1f                      // grow-in progress 0->1 (1 = fully materialized)
         var rscale = 1f                     // current render scale (driven by spawn)
+        var gemCol: ColorAttribute? = null  // gem's diffuse attr, colour-faded from the sky during spawn
     }
 
     private lateinit var tileModel: Model
@@ -159,12 +160,19 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         val ca = ColorAttribute.createDiffuse(base)
         inst.materials.first().set(ca)
         val bl = BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 1f)
-        val gi = if (gem) ModelInstance(gemModel).also {
-            it.materials.first().set(ColorAttribute.createDiffuse(Color(1f, 0.92f, 0.35f, 1f)))
-        } else null
+        val gemCa: ColorAttribute?
+        val gi: ModelInstance?
+        if (gem) {
+            gemCa = ColorAttribute.createDiffuse(GEM_BASE)
+            gi = ModelInstance(gemModel).apply { materials.first().set(gemCa) }
+        } else {
+            gemCa = null
+            gi = null
+        }
         val t = Tile(gx, gz, inst, ca, bl, base, gem, gi, MathUtils.random(6.28f),
             MathUtils.randomBoolean(),
             MathUtils.random(120f, 260f) * (if (MathUtils.randomBoolean()) 1f else -1f))
+        t.gemCol = gemCa
         t.spawn = if (spawnAnim) 0f else 1f   // tiles laid down mid-run grow in; the start field is instant
         tiles.add(t)
         map[key(gx, gz)] = t
@@ -467,11 +475,18 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
             if (started && !dying && !rolling && t.gx == cubeGx && t.gz == cubeGz &&
                 t.state != FALLING && dl - dwell < 0.6f)
                 c.lerp(1f, 0.2f, 0.18f, 1f, 0.3f + 0.3f * sin(time * 26f))
-            if (t.gem && t.gemInst != null)
+            if (t.gem && t.gemInst != null) {
+                // Materialize the gem in lockstep with its tile's spawn (grow + rise + colour-fade
+                // out of the sky) instead of popping it in at full size at the render edge. e == 1
+                // once settled, so a fully-grown gem's transform/colour are exactly as before.
+                val e = 1f - (1f - t.spawn) * (1f - t.spawn)
                 t.gemInst.transform
-                    .setToTranslation(t.gx.toFloat(), 0.62f + bob * 1.6f, t.gz.toFloat())
+                    .setToTranslation(t.gx.toFloat(), 0.62f * e + bob * 1.6f - (1f - e) * 0.45f, t.gz.toFloat())
                     .rotate(Vector3.Y, time * 150f + t.phase * 50f)
                     .rotate(Vector3.X, 35f)
+                    .scale(t.rscale, t.rscale, t.rscale)
+                t.gemCol?.color?.set(GEM_BASE)?.lerp(bgTop, 1f - e)
+            }
             i--
         }
     }
@@ -569,6 +584,7 @@ class EdgeRoll(session: GameSession) : Gdx3DGame(session) {
         const val TILE_CULL_R = 0.9f   // bounding-sphere radius for frustum culling a tile
         const val RENDER_AHEAD = 28    // tiles generated/visible ahead of the cube (was 16)
         const val SPAWN_DUR = 0.34f    // seconds for a freshly generated tile to grow in
+        val GEM_BASE = Color(1f, 0.92f, 0.35f, 1f)   // gem's settled amber (read-only; faded from the sky on spawn)
         const val DEATH_DELAY = 2f     // seconds to watch the cube fall before the game-over card
         const val ALIVE = 0; const val CRUMBLE = 1; const val FALLING = 2
         const val CUBE_Y = 0.6f    // resting cube center height

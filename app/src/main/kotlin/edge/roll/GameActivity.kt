@@ -43,6 +43,14 @@ class GameActivity : AndroidApplication() {
             useAccelerometer = false
             useCompass = false
             numSamples = 2
+            // Keep a guaranteed 8-bit-per-channel surface. Do NOT bump this to 10-bit
+            // (r=g=b=10) hoping for more gradient depth: libGDX's EGL config chooser has
+            // no true "10-bit-or-fall-back-to-8888" path — when a device lacks a 10-bit
+            // config it picks RGB565 as the nearest match, *downgrading* colour depth and
+            // making banding worse (verified: a 10/10/10/2 request lands on R5 G6 B5 on
+            // hardware without a 10-bit config). The gradient banding is instead fixed for
+            // real by the dither shader in Gdx3DGame, which scales to whatever surface depth
+            // we actually get — the honest cure, and independent of the framebuffer format.
             r = 8; g = 8; b = 8; a = 8
             // 24-bit depth: 16-bit can't separate the die-pips from the cube face once the cube
             // is far down the abyss (they z-fight/flicker); 24-bit resolves them cleanly.
